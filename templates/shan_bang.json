@@ -1,0 +1,12 @@
+{
+  "action_name": "山膀",
+  "display_name": "山膀手位",
+  "category": "古典舞手位",
+  "standards": {
+    "left_shoulder_abduction":  {"value": 90, "min": 85, "max": 95, "name": "左肩外展"},
+    "right_shoulder_abduction": {"value": 90, "min": 85, "max": 95, "name": "右肩外展"},
+    "left_elbow_extension":   {"value": 175, "min": 170, "max": 180, "name": "左肘伸展"},
+    "right_elbow_extension":  {"value": 175, "min": 170, "max": 180, "name": "右肘伸展"},
+    "spine_vertical":         {"value": 178, "min": 170, "max": 180, "name": "脊柱垂直"}
+  }
+}

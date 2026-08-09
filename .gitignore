@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.env
+
+# Runtime data
+training_stats.json
+*.log
+
+# Temp / backup
+main.txt

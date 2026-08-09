@@ -1,0 +1,32 @@
+{
+  "570928.mp4": {
+    "title": "古典舞示范·山膀",
+    "category": "古典舞",
+    "tags": ["古典舞", "山膀", "手位", "示范"]
+  },
+  "street_dancer.mp4": {
+    "title": "街舞·街头舞者",
+    "category": "街舞",
+    "tags": ["街舞", "独舞", "街头", "节奏"]
+  },
+  "model_dance.mp4": {
+    "title": "现代舞·长发舞者",
+    "category": "现代舞",
+    "tags": ["现代舞", "独舞", "长发", "表演"]
+  },
+  "twist_dance.mp4": {
+    "title": "摇摆舞·扭摆舞步",
+    "category": "交谊舞",
+    "tags": ["摇摆舞", "扭摆", "派对", "节奏"]
+  },
+  "performer_man.mp4": {
+    "title": "男性舞者·舞台表演",
+    "category": "现代舞",
+    "tags": ["现代舞", "独舞", "表演", "舞台"]
+  },
+  "silver_disco.mp4": {
+    "title": "迪斯科·银色舞池",
+    "category": "街舞",
+    "tags": ["迪斯科", "舞池", "动感", "节奏"]
+  }
+}
