@@ -33,25 +33,7 @@ class PoseAnalyzer:
             27: 'left_ankle', 28: 'right_ankle',
         }
         
-        # 标准动作模板（示例：古典舞"山膀"手位）
-        # 格式：{关节名: (最小角度, 标准角度, 最大角度)}
-        self.TEMPLATES = {
-            'shan_bang': {  # 山膀
-                'left_shoulder_abduction': (85, 90, 95),   # 左肩外展
-                'right_shoulder_abduction': (85, 90, 95),  # 右肩外展
-                'left_elbow_extension': (160, 180, 180),   # 左肘伸直
-                'right_elbow_extension': (160, 180, 180), # 右肘伸直
-                'spine_vertical': (170, 178, 180),         # 脊柱垂直（竖直≈180°）
-            },
-            'stand': {  # 基本站姿
-                'spine_vertical': (170, 178, 180),
-                'left_knee_extension': (170, 180, 180),
-                'right_knee_extension': (170, 180, 180),
-                'hip_width': (0.8, 1.0, 1.2),  # 髋宽与肩宽比
-            }
-        }
-        
-        self.current_template = 'stand'  # 默认站姿
+        self.current_template = '未选择'  # 当前使用的模板名称
         self.feedback_history = []       # 反馈历史
         self.external_template = None    # 来自视频的外部标准模板
         
@@ -145,30 +127,31 @@ class PoseAnalyzer:
         results['left_arm_level'] = abs(le[1] - ls[1]) * 100
         results['right_arm_level'] = abs(re[1] - rs[1]) * 100
         
-        # ========== 3. 与标准模板对比，生成反馈 ==========
-        template = self.external_template if self.external_template is not None else self.TEMPLATES.get(self.current_template, {})
+        # ========== 3. 与外部标准模板对比，生成反馈 ==========
+        template = self.external_template
         feedback = []
-        
-        for key, (min_val, std_val, max_val) in template.items():
-            if key in results:
-                actual = results[key]
-                deviation = abs(actual - std_val)
-                
-                # 判断等级
-                if actual < min_val or actual > max_val:
-                    level = 'error'      # 严重偏差
-                elif deviation > (max_val - min_val) * 0.5:
-                    level = 'warning'    # 轻微偏差
-                else:
-                    level = 'good'       # 合格
-                
-                feedback.append({
-                    'name': key,
-                    'actual': round(actual, 1),
-                    'standard': std_val,
-                    'deviation': round(deviation, 1),
-                    'level': level
-                })
+
+        if template:
+            for key, (min_val, std_val, max_val) in template.items():
+                if key in results:
+                    actual = results[key]
+                    deviation = abs(actual - std_val)
+
+                    # 判断等级
+                    if actual < min_val or actual > max_val:
+                        level = 'error'      # 严重偏差
+                    elif deviation > (max_val - min_val) * 0.5:
+                        level = 'warning'    # 轻微偏差
+                    else:
+                        level = 'good'       # 合格
+
+                    feedback.append({
+                        'name': key,
+                        'actual': round(actual, 1),
+                        'standard': std_val,
+                        'deviation': round(deviation, 1),
+                        'level': level
+                    })
         
         results['feedback'] = feedback
         results['overall_score'] = self._calculate_score(feedback)
@@ -176,11 +159,64 @@ class PoseAnalyzer:
         return results
     
     def _calculate_score(self, feedback):
-        """计算综合评分（0-100）"""
+        """计算综合评分（0-100），连续加权打分，避免离散跳变"""
         if not feedback:
             return 0
-        good_count = sum(1 for f in feedback if f['level'] == 'good')
-        return int((good_count / len(feedback)) * 100)
+
+        # 指标权重：脊柱 > 对称性 > 关节角度 > 辅助指标
+        weights = {
+            'spine_vertical': 1.5,
+            'shoulder_symmetry': 1.3,
+            'elbow_symmetry': 1.3,
+            'left_shoulder_abduction': 1.2,
+            'right_shoulder_abduction': 1.2,
+            'left_elbow_extension': 1.0,
+            'right_elbow_extension': 1.0,
+            'left_knee_extension': 1.0,
+            'right_knee_extension': 1.0,
+            'left_arm_level': 0.8,
+            'right_arm_level': 0.8,
+            'hip_width': 0.8,
+        }
+
+        total_weight = 0.0
+        weighted_score = 0.0
+
+        for f in feedback:
+            name = f['name']
+            deviation = f['deviation']
+            std = f['standard']
+
+            # 容忍范围 = 标准值的 5%，至少 2.0
+            tol = max(2.0, abs(std) * 0.05 if std != 0 else 2.0)
+
+            # 连续打分：偏差越小分越高，偏差超过容忍范围则快速衰减
+            ratio = deviation / tol if tol > 0 else deviation
+            if ratio <= 0.3:
+                sub_score = 95.0 + (0.3 - ratio) / 0.3 * 5.0   # 95 ~ 100
+            elif ratio <= 0.6:
+                sub_score = 78.0 + (0.6 - ratio) / 0.3 * 17.0  # 78 ~ 95
+            elif ratio <= 1.0:
+                sub_score = 50.0 + (1.0 - ratio) / 0.4 * 28.0  # 50 ~ 78
+            elif ratio <= 2.0:
+                sub_score = max(10.0, 50.0 - (ratio - 1.0) * 40.0)  # 10 ~ 50
+            else:
+                sub_score = max(0.0, 10.0 - (ratio - 2.0) * 5.0)
+
+            w = weights.get(name, 1.0)
+            total_weight += w
+            weighted_score += sub_score * w
+
+            # 同步更新 feedback 中的 level（供前端颜色显示）
+            if ratio <= 0.3:
+                f['level'] = 'good'
+            elif ratio <= 1.0:
+                f['level'] = 'warning'
+            else:
+                f['level'] = 'error'
+
+        final = weighted_score / total_weight if total_weight > 0 else 0.0
+        return int(round(final))
     
     def draw_analysis(self, image, landmarks, analysis_results):
         """
@@ -271,14 +307,6 @@ class PoseAnalyzer:
         
         return frame, analysis
     
-    def set_template(self, template_name):
-        """切换标准动作模板（内置模板）"""
-        self.external_template = None
-        if template_name in self.TEMPLATES:
-            self.current_template = template_name
-            return True
-        return False
-
     def set_external_template(self, name, metrics):
         """设置来自视频的外部标准模板
         metrics: {指标名: (最小, 标准, 最大)}

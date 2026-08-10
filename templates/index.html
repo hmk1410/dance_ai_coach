@@ -211,6 +211,21 @@
             position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
             background: rgba(0,0,0,0.25); opacity: 0; transition: 0.25s; font-size: 34px;
         }
+        .del-btn {
+            position: absolute; top: 10px; right: 10px; z-index: 5;
+            width: 28px; height: 28px; border-radius: 50%; border: none;
+            background: rgba(255,92,108,0.75); color: #fff; font-size: 14px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            opacity: 0; transition: 0.2s;
+        }
+        .vcard:hover .del-btn { opacity: 1; }
+        .del-btn:hover { background: #ff2d3f; }
+        .cat-select {
+            background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+            border-radius: 6px; color: var(--muted); font-size: 11px; padding: 2px 6px;
+            cursor: pointer; outline: none;
+        }
+        .cat-select:focus { border-color: var(--accent); }
         .vcard:hover .thumb .play { opacity: 1; }
         .vcard .body { padding: 14px 16px; }
         .vcard .t { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -231,10 +246,17 @@
         .kpi .k { font-size: 13px; color: var(--muted); margin-top: 6px; }
         .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
         .chart-card h3 { font-size: 15px; margin-bottom: 16px; color: #d5ddff; }
-        .bars { display: flex; align-items: flex-end; gap: 4px; height: 200px; }
-        .bar { flex: 1; background: linear-gradient(180deg, var(--accent2), var(--accent)); border-radius: 4px 4px 0 0; min-height: 2px; transition: height 0.3s; position: relative; }
+        .chart-area { display: flex; gap: 6px; }
+        .y-axis { display: flex; flex-direction: column; justify-content: space-between; height: 200px; flex-shrink: 0; padding: 0 4px; }
+        .y-axis span { font-size: 10px; color: var(--muted); text-align: right; line-height: 1; }
+        .chart-scroll { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; flex: 1; }
+        .chart-scroll::-webkit-scrollbar { height: 6px; }
+        .chart-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+        .bars { display: flex; align-items: flex-end; gap: 6px; height: 200px; min-width: max-content; }
+        .bar { flex: 0 0 28px; background: linear-gradient(180deg, var(--accent2), var(--accent)); border-radius: 4px 4px 0 0; min-height: 2px; transition: height 0.3s; position: relative; cursor: pointer; }
         .bar.warn { background: linear-gradient(180deg, var(--yellow), var(--yellow)); }
         .bar.bad { background: linear-gradient(180deg, var(--red), var(--red)); }
+        .bar:hover { filter: brightness(1.3); }
         .axis-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 8px; }
 
         /* ============ AI舞蹈教练页 ============ */
@@ -275,6 +297,28 @@
             pointer-events: none; border: 1px solid var(--border); box-shadow: var(--shadow);
         }
         .toast.show { opacity: 1; }
+
+        /* ============ 视频播放模态框 ============ */
+        .modal {
+            position: fixed; inset: 0; z-index: 999;
+            background: rgba(0,0,0,0.8); backdrop-filter: blur(10px);
+            display: none; align-items: center; justify-content: center;
+        }
+        .modal.show { display: flex; }
+        .modal-inner {
+            position: relative; max-width: 90vw; max-height: 85vh;
+            background: #000; border-radius: 14px; overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+        }
+        .modal-inner video { max-width: 90vw; max-height: 80vh; display: block; }
+        .modal-close {
+            position: absolute; top: 10px; right: 14px; z-index: 10;
+            width: 36px; height: 36px; border-radius: 50%;
+            background: rgba(0,0,0,0.55); border: none; color: #fff;
+            font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: 0.2s;
+        }
+        .modal-close:hover { background: rgba(255,255,255,0.25); }
 
         @media (max-width: 960px) {
             .live-grid { grid-template-columns: 1fr; }
@@ -327,7 +371,7 @@
                         <div class="standard-empty" id="std-empty">
                             到「视频库」搜索并选择一个舞蹈视频，系统会自动学习其中的标准动作，然后对照你的实时姿态进行矫正。
                         </div>
-                        <video id="std-video" controls loop style="display:none;"></video>
+                        <video id="std-video" loop style="display:none;"></video>
                     </div>
                 </div>
 
@@ -345,19 +389,11 @@
                                 <div class="num" id="score-text">0</div>
                             </div>
                             <div class="score-label">综合得分</div>
-                            <div class="source-box" id="source-box">内置模板：基本站姿</div>
+                            <div class="source-box" id="source-box">未选择视频标准</div>
                         </div>
                         <div class="stats">
                             <div class="stat"><div class="n" id="fps-display">--</div><div class="l">FPS</div></div>
                             <div class="stat"><div class="n" id="latency-display">--</div><div class="l">延迟(ms)</div></div>
-                        </div>
-                    </div>
-
-                    <div class="panel">
-                        <h3>🎯 内置训练项目</h3>
-                        <div class="template-selector">
-                            <button class="tpl-btn active" data-tpl="stand" onclick="setTemplate(event)">基本站姿</button>
-                            <button class="tpl-btn" data-tpl="shan_bang" onclick="setTemplate(event)">山膀手位</button>
                         </div>
                     </div>
 
@@ -389,7 +425,8 @@
                            onkeydown="if(event.key==='Enter')searchVideos()">
                 </div>
                 <button class="btn" onclick="searchVideos()">搜索</button>
-                <button class="btn ghost" onclick="resetLibrary()">重置</button>
+                <input type="file" id="upload-input" accept=".mp4,.mov,.avi,.webm,.mkv" style="display:none;" onchange="uploadVideo(event)">
+                <button class="btn" onclick="document.getElementById('upload-input').click()" style="background: linear-gradient(135deg, var(--green), #1fa884);">📤 上传视频</button>
             </div>
             <div class="chips" id="chips"></div>
             <div class="lib-grid" id="lib-grid">
@@ -403,22 +440,28 @@
                 <div class="kpi"><div class="v" id="ps-sessions">0</div><div class="k">累计训练次数</div></div>
                 <div class="kpi"><div class="v" id="ps-total">00:00</div><div class="k">累计训练时长</div></div>
                 <div class="kpi"><div class="v" id="ps-today">00:00</div><div class="k">今日时长</div></div>
-                <div class="kpi"><div class="v" id="ps-today-sessions">0</div><div class="k">今日次数</div></div>
+                <div class="kpi"><div class="v" id="ps-avg-score">--</div><div class="k">历次平均得分</div></div>
             </div>
             <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
                 <button class="btn ghost" onclick="resetStats()">🗑️ 清零累计统计</button>
             </div>
             <div class="chart-card">
-                <h3>📉 得分趋势（最近 60 次）</h3>
-                <div class="bars" id="chart"></div>
-                <div class="axis-label"><span>更早</span><span>现在</span></div>
+                <h3>📉 每次训练平均得分（最近 60 次）</h3>
+                <div class="chart-area">
+                    <div class="y-axis" id="y-axis">
+                        <span>100</span><span>80</span><span>60</span><span>40</span><span>20</span><span>0</span>
+                    </div>
+                    <div class="chart-scroll" id="chart-scroll">
+                        <div class="bars" id="chart"></div>
+                    </div>
+                </div>
+                <div class="axis-label"><span>← 左右滑动查看 →</span><span>最近</span></div>
             </div>
             <div class="stats-grid">
                 <div class="kpi"><div class="v" id="st-now">0</div><div class="k">当前得分</div></div>
                 <div class="kpi"><div class="v" id="st-best">0</div><div class="k">最高得分</div></div>
-                <div class="kpi"><div class="v" id="st-avg">0</div><div class="k">平均得分</div></div>
+                <div class="kpi"><div class="v" id="st-avg">0</div><div class="k">本次平均</div></div>
                 <div class="kpi"><div class="v" id="st-pass">0%</div><div class="k">及格率(≥60)</div></div>
-                <div class="kpi"><div class="v" id="st-time">00:00</div><div class="k">本次时长</div></div>
             </div>
             <div class="empty" id="stats-empty" style="display:none;">还没有训练数据，请先在「实时训练」页面站到摄像头前。</div>
         </section>
@@ -440,6 +483,13 @@
             </div>
         </section>
     </main>
+
+    <div class="modal" id="video-modal" onclick="closeModal(event)">
+        <div class="modal-inner" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <video id="modal-video" controls autoplay></video>
+        </div>
+    </div>
 
     <div class="toast" id="toast"></div>
 
@@ -465,8 +515,8 @@
         let manualElapsedStart = Date.now();
 
         // 训练统计
-        const scores = [];
-        const sessionStart = Date.now();
+        const scores = [];               // 当前会话的分数样本
+        let sessionScores = [];          // 历史每次训练的平均得分（从后端获取）
 
         function showToast(msg) {
             const t = document.getElementById('toast');
@@ -531,15 +581,23 @@
             list.forEach(v => {
                 const d = document.createElement('div');
                 d.className = 'vcard' + (v.id === currentVideoId ? ' using' : '');
+                d.onclick = () => playVideo(v.id, v.title, v.filename);
+                const isShanBang = v.title.includes('山膀') || (v.tags || []).some(t => t.includes('山膀'));
                 d.innerHTML = `
                     <div class="thumb">
                         <img src="/api/videos/${encodeURIComponent(v.id)}/thumbnail" alt="" loading="lazy" onerror="this.style.display='none'">
                         <div class="badge">${EMOJI[v.category] || '🎬'} ${escapeHtml(v.category)}</div>
                         <div class="play">▶️</div>
+                        ${isShanBang ? '' : `<button class="del-btn" onclick="deleteVideo(event, '${escapeHtml(v.id)}', '${escapeHtml(v.title)}')" title="删除视频">✕</button>`}
                     </div>
                     <div class="body">
                         <div class="t">${escapeHtml(v.title)}</div>
-                        <div class="meta"><span>${fmtSize(v.size)}</span></div>
+                        <div class="meta">
+                            <span>${fmtSize(v.size)}</span>
+                            <select class="cat-select" onchange="changeCategory(event, '${escapeHtml(v.id)}')" onclick="event.stopPropagation()">
+                                ${['古典舞','现代舞','街舞','交谊舞','健身舞蹈','未分类'].map(c => `<option value="${c}" ${v.category === c ? 'selected' : ''}>${c}</option>`).join('')}
+                            </select>
+                        </div>
                         <div class="tags">${(v.tags || []).slice(0, 3).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>
                         <div class="use-hint">
                             <button class="btn" onclick="useVideo(event, '${escapeHtml(v.id)}')">${v.id === currentVideoId ? '✓ 正在训练' : '▶ 用此视频训练'}</button>
@@ -547,6 +605,25 @@
                     </div>`;
                 grid.appendChild(d);
             });
+        }
+
+        function uploadVideo(ev) {
+            const file = ev.target.files[0];
+            if (!file) return;
+            showToast('正在上传并分析视频动作，请稍候…');
+            const formData = new FormData();
+            formData.append('file', file);
+            fetch('/api/upload', { method: 'POST', body: formData })
+                .then(r => r.json()).then(d => {
+                    ev.target.value = '';
+                    if (!d.success) { showToast('上传失败：' + d.error); return; }
+                    if (d.can_use) {
+                        showToast(`上传成功！已自动分析出 ${d.metrics_count} 项动作指标，可在视频库选择训练`);
+                    } else {
+                        showToast('上传成功！但未检测到人体姿态，可能无法用于动作对比');
+                    }
+                    resetLibrary();
+                }).catch(() => { showToast('上传请求失败'); ev.target.value = ''; });
         }
 
         function searchVideos() {
@@ -560,6 +637,49 @@
             currentKeyword = '';
             activeCategory = '全部';
             loadLibrary('');
+        }
+
+        function playVideo(id, title, filename) {
+            const modal = document.getElementById('video-modal');
+            const video = document.getElementById('modal-video');
+            video.src = '/video/' + encodeURIComponent(filename);
+            modal.classList.add('show');
+            video.play().catch(() => {});
+        }
+
+        function closeModal(ev) {
+            if (ev && ev.target !== document.getElementById('video-modal')) return;
+            const modal = document.getElementById('video-modal');
+            const video = document.getElementById('modal-video');
+            video.pause();
+            video.src = '';
+            modal.classList.remove('show');
+        }
+
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+        function deleteVideo(ev, id, title) {
+            ev.stopPropagation();
+            if (!confirm(`确定要删除「${title}」吗？此操作不可恢复。`)) return;
+            fetch('/api/videos/' + encodeURIComponent(id), { method: 'DELETE' })
+                .then(r => r.json()).then(d => {
+                    if (d.success) { showToast('已删除'); resetLibrary(); }
+                    else showToast('删除失败：' + d.error);
+                }).catch(() => showToast('删除请求失败'));
+        }
+
+        function changeCategory(ev, id) {
+            ev.stopPropagation();
+            const cat = ev.target.value;
+            fetch('/api/videos/' + encodeURIComponent(id), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category: cat })
+            }).then(r => r.json()).then(d => {
+                if (d.success) showToast('分类已更新');
+                else showToast('更新失败');
+                loadLibrary(currentKeyword || '');
+            }).catch(() => showToast('请求失败'));
         }
 
         function useVideo(ev, id) {
@@ -577,10 +697,11 @@
                 video.style.display = 'block';
                 document.getElementById('std-empty').style.display = 'none';
                 document.getElementById('std-title').textContent = d.title;
-                video.play().catch(() => {});
+                document.getElementById('source-box').textContent = '视频标准:' + d.title;
+                // 不自动播放，等点击"开始训练"时再播放
                 switchPage('live');
                 renderGrid();
-                showToast('已启用「' + d.title + '」标准，开始对照练习吧！');
+                showToast('已启用「' + d.title + '」标准，点击"开始训练"开始练习吧！');
             }).catch(() => showToast('请求失败'));
         }
 
@@ -589,16 +710,50 @@
             fetch('/api/analysis').then(r => r.json()).then(data => {
                 const score = Math.round(data.score || 0);
 
-                if (score !== lastScore) {
-                    lastScore = score;
-                    document.getElementById('score-text').textContent = score;
-                    const circle = document.getElementById('score-circle');
-                    circle.style.strokeDashoffset = CIRC - (score / 100) * CIRC;
-                    circle.style.stroke = score >= 80 ? '#34f5a0' : score >= 60 ? '#ffc857' : '#ff5c6c';
+                if (manualActive) {
+                    // ===== 训练中：实时更新分数、角度、矫正提示 =====
+                    if (score !== lastScore) {
+                        lastScore = score;
+                        document.getElementById('score-text').textContent = score;
+                        const circle = document.getElementById('score-circle');
+                        circle.style.strokeDashoffset = CIRC - (score / 100) * CIRC;
+                        circle.style.stroke = score >= 80 ? '#34f5a0' : score >= 60 ? '#ffc857' : '#ff5c6c';
+                    }
+                    // 矫正提示实时更新
+                    const list = document.getElementById('feedback-list');
+                    if (!data.feedback || data.feedback.length === 0) {
+                        list.innerHTML = '<div class="empty">等待人体识别…</div>';
+                    } else {
+                        list.innerHTML = '';
+                        data.feedback.forEach(item => {
+                            const lv = item.level === 'good' ? 'good' : item.level === 'warning' ? 'warning' : 'error';
+                            const ic = item.level === 'good' ? '✓' : item.level === 'warning' ? '!' : '✗';
+                            const div = document.createElement('div');
+                            div.className = 'fb';
+                            div.innerHTML = `
+                                <div class="icon ${lv}">${ic}</div>
+                                <div class="txt">
+                                    <div class="nm">${NAME_MAP[item.name] || item.name}</div>
+                                    <div class="vl">当前 ${item.actual}° | 标准 ${item.standard}° | 偏差 ${item.deviation}°</div>
+                                </div>`;
+                            list.appendChild(div);
+                        });
+                    }
+                } else {
+                    // ===== 未训练：分数和矫正提示全部冻结为初始状态 =====
+                    if (lastScore !== -1) {
+                        lastScore = -1;
+                        document.getElementById('score-text').textContent = '--';
+                        const circle = document.getElementById('score-circle');
+                        circle.style.strokeDashoffset = CIRC;  // 空环
+                        circle.style.stroke = '#6d8dff';
+                        document.getElementById('feedback-list').innerHTML =
+                            '<div class="empty">点击「开始训练」后开始评分</div>';
+                    }
                 }
 
                 const sb = document.getElementById('source-box');
-                const src = data.source || '内置模板';
+                const src = data.source || '未选择视频标准';
                 if (sb.textContent !== src) sb.textContent = src;
 
                 const fpsEl = document.getElementById('fps-display');
@@ -606,30 +761,18 @@
                 if (data.fps != null) fpsEl.textContent = data.fps;
                 if (data.timestamp) latEl.textContent = Math.max(0, Math.round((Date.now() / 1000 - data.timestamp) * 1000));
 
-                const list = document.getElementById('feedback-list');
-                if (!data.feedback || data.feedback.length === 0) {
-                    list.innerHTML = '<div class="empty">等待人体识别…</div>';
-                } else {
-                    list.innerHTML = '';
-                    data.feedback.forEach(item => {
-                        const lv = item.level === 'good' ? 'good' : item.level === 'warning' ? 'warning' : 'error';
-                        const ic = item.level === 'good' ? '✓' : item.level === 'warning' ? '!' : '✗';
-                        const div = document.createElement('div');
-                        div.className = 'fb';
-                        div.innerHTML = `
-                            <div class="icon ${lv}">${ic}</div>
-                            <div class="txt">
-                                <div class="nm">${NAME_MAP[item.name] || item.name}</div>
-                                <div class="vl">当前 ${item.actual}° | 标准 ${item.standard}° | 偏差 ${item.deviation}°</div>
-                            </div>`;
-                        list.appendChild(div);
-                    });
-                }
-
-                // 训练统计
-                if (data.feedback && data.feedback.length) {
+                // 训练统计：只在手动训练期间记录分数
+                if (manualActive && data.feedback && data.feedback.length) {
                     scores.push(score);
                     if (scores.length > 200) scores.shift();
+                    // 每 2 秒向后台报告一次分数
+                    if (scores.length % 10 === 0) {
+                        fetch('/api/score/record', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ score: score })
+                        }).catch(() => {});
+                    }
                 }
                 updateStats();
             }).catch(() => {});
@@ -641,38 +784,25 @@
             document.getElementById('st-avg').textContent = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
             const pass = scores.length ? scores.filter(s => s >= 60).length / scores.length : 0;
             document.getElementById('st-pass').textContent = Math.round(pass * 100) + '%';
-            const sec = Math.floor((Date.now() - sessionStart) / 1000);
-            const mm = String(Math.floor(sec / 60)).padStart(2, '0');
-            const ss = String(sec % 60).padStart(2, '0');
-            document.getElementById('st-time').textContent = mm + ':' + ss;
 
-            const chart = document.getElementById('chart');
-            const recent = scores.slice(-60);
-            document.getElementById('stats-empty').style.display = recent.length ? 'none' : 'block';
-            if (!recent.length) { chart.innerHTML = ''; return; }
-            const max = Math.max(...recent, 100);
-            chart.innerHTML = '';
-            recent.forEach(s => {
-                const bar = document.createElement('div');
-                bar.className = 'bar' + (s < 60 ? ' bad' : s < 80 ? ' warn' : '');
-                bar.style.height = Math.max(2, (s / max) * 100) + '%';
-                bar.title = s;
-                chart.appendChild(bar);
-            });
+            // 得分趋势图：使用历史 session_scores
+            renderScoreChart();
         }
 
-        function setTemplate(ev) {
-            ev.preventDefault();
-            const name = ev.currentTarget.dataset.tpl;
-            document.querySelectorAll('.tpl-btn').forEach(b => b.classList.remove('active'));
-            ev.currentTarget.classList.add('active');
-            fetch('/api/set_template', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ template: name })
-            }).then(r => r.json()).then(d => {
-                if (d.success) showToast('已切换为内置模板');
-                else showToast('切换失败');
+        function renderScoreChart() {
+            const chart = document.getElementById('chart');
+            const data = sessionScores.slice(-60);
+            document.getElementById('stats-empty').style.display = data.length ? 'none' : 'block';
+            if (!data.length) { chart.innerHTML = ''; return; }
+            const max = Math.max(...data.map(d => d.avg_score), 100);
+            chart.innerHTML = '';
+            data.forEach(d => {
+                const bar = document.createElement('div');
+                const s = d.avg_score;
+                bar.className = 'bar' + (s < 60 ? ' bad' : s < 80 ? ' warn' : '');
+                bar.style.height = Math.max(2, (s / max) * 100) + '%';
+                bar.title = `${d.date} | 平均得分: ${s} | 时长: ${fmtDur(d.duration)}`;
+                chart.appendChild(bar);
             });
         }
 
@@ -692,7 +822,19 @@
                 document.getElementById('ps-sessions').textContent = d.total_sessions;
                 document.getElementById('ps-total').textContent = fmtDur(d.total_seconds);
                 document.getElementById('ps-today').textContent = fmtDur(d.today_seconds);
-                document.getElementById('ps-today-sessions').textContent = d.today_sessions || 0;
+
+                // 历次平均得分
+                const sc = d.session_scores || [];
+                if (sc.length > 0) {
+                    const avgAll = Math.round(sc.reduce((a, b) => a + b.avg_score, 0) / sc.length);
+                    document.getElementById('ps-avg-score').textContent = avgAll;
+                } else {
+                    document.getElementById('ps-avg-score').textContent = '--';
+                }
+
+                // 得分趋势
+                sessionScores = sc;
+                renderScoreChart();
 
                 // 同步手动会话状态（刷新页面后仍可继续计时）
                 if (d.manual_active && !manualActive) {
@@ -718,13 +860,31 @@
         // ============ 手动训练计时 ============
         function toggleTraining() {
             const action = manualActive ? 'stop' : 'start';
-            fetch('/api/training/' + action, { method: 'POST' }).then(r => r.json()).then(d => {
+            const body = action === 'stop' ? JSON.stringify({
+                avg_score: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
+            }) : null;
+
+            fetch('/api/training/' + action, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: body
+            }).then(r => r.json()).then(d => {
                 if (d.manual_active && !manualActive) {
                     manualActive = true;
                     manualElapsedStart = Date.now();
+                    scores.length = 0;  // 清空本会话分数
+                    // 开始播放标准视频
+                    const stdVid = document.getElementById('std-video');
+                    if (stdVid.src && !stdVid.src.endsWith('/')) {
+                        stdVid.currentTime = 0;
+                        stdVid.play().catch(() => {});
+                    }
                     showToast('训练已开始，计时中…');
                 } else if (!d.manual_active && manualActive) {
                     manualActive = false;
+                    // 暂停标准视频
+                    const stdVid = document.getElementById('std-video');
+                    stdVid.pause();
                     showToast('本次训练已结束并计入累计统计');
                 }
                 updateManualBtn();
@@ -734,13 +894,22 @@
 
         function updateManualBtn() {
             const btn = document.getElementById('manual-btn');
-            if (!btn) return;
+            const pill = document.querySelector('.live-pill');
+            const liveText = document.getElementById('live-text');
             if (manualActive) {
-                btn.textContent = '⏹ 结束训练';
-                btn.style.background = 'linear-gradient(135deg, #ff5c6c, #ff8c42)';
+                if (btn) {
+                    btn.textContent = '⏹ 结束训练';
+                    btn.style.background = 'linear-gradient(135deg, #ff5c6c, #ff8c42)';
+                }
+                if (pill) pill.style.display = '';
+                if (liveText) liveText.textContent = '实时分析中';
             } else {
-                btn.textContent = '▶ 开始训练';
-                btn.style.background = '';
+                if (btn) {
+                    btn.textContent = '▶ 开始训练';
+                    btn.style.background = '';
+                }
+                if (pill) pill.style.display = 'none';
+                if (liveText) liveText.textContent = '等待开始训练';
             }
         }
 
@@ -818,12 +987,39 @@
             });
         }
 
-        setInterval(updateAnalysis, 500);
+        // ========== 首次加载：自动选择山膀视频作为默认标准 ==========
+        function autoLoadShanBang() {
+            fetch('/api/videos').then(r => r.json()).then(d => {
+                const shanBang = (d.videos || []).find(v =>
+                    v.title.includes('山膀') || (v.tags || []).some(t => t.includes('山膀')));
+                if (shanBang) {
+                    fetch('/api/use_video', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ video_id: shanBang.id })
+                    }).then(r => r.json()).then(d2 => {
+                        if (d2.success) {
+                            currentVideoId = shanBang.id;
+                            const video = document.getElementById('std-video');
+                            video.src = d2.video_url;
+                            video.style.display = 'block';
+                            document.getElementById('std-empty').style.display = 'none';
+                            document.getElementById('std-title').textContent = d2.title;
+                            document.getElementById('source-box').textContent = '视频标准:' + d2.title;
+                        }
+                    }).catch(() => {});
+                }
+            }).catch(() => {});
+        }
+
+        setInterval(updateAnalysis, 200);
         updateAnalysis();
         loadLibrary('');
+        autoLoadShanBang();  // 首次打开自动加载山膀视频
         loadStats();
         setInterval(loadStats, 1000);
         setInterval(updateManualTimer, 1000);
+        updateManualBtn();   // 初始隐藏"实时分析中"
         checkCoachStatus();
     </script>
 </body>

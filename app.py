@@ -3,6 +3,7 @@ Flask主程序：提供视频流服务、舞蹈视频库与Web界面
 """
 
 from flask import Flask, render_template, Response, jsonify, request, send_from_directory
+from werkzeug.utils import secure_filename
 import cv2
 import threading
 import time
@@ -32,8 +33,7 @@ VIDEO_EXTS = ('.mp4', '.mov', '.avi', '.webm', '.mkv')
 latest_analysis = {
     'score': 0,
     'feedback': [],
-    'template': 'stand',
-    'source': '内置模板:基本站姿',
+    'source': '未选择视频标准',
     'timestamp': 0
 }
 
@@ -44,8 +44,10 @@ _training_stats = None
 _manual_active = False         # 手动训练会话是否开启
 _manual_start = None           # 手动训练开始时间
 
+_session_score_samples = []  # 手动训练期间累积的分数样本
+
 def _default_stats():
-    return {'total_sessions': 0, 'total_seconds': 0.0, 'daily_seconds': {}, 'daily_sessions': {}}
+    return {'total_sessions': 0, 'total_seconds': 0.0, 'daily_seconds': {}, 'daily_sessions': {}, 'session_scores': []}
 
 def load_stats():
     """读取训练统计（内存缓存 + 文件回退）"""
@@ -111,10 +113,10 @@ def get_camera():
                     break
         
         if camera.isOpened():
-            # 设置分辨率（降低以提升帧率）
+            # 设置分辨率，高帧率
             camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
             camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-            camera.set(cv2.CAP_PROP_FPS, 30)
+            camera.set(cv2.CAP_PROP_FPS, 60)
     
     return camera
 
@@ -154,22 +156,19 @@ def processing_loop():
         # 更新全局状态
         with lock:
             current_frame = processed_frame.copy()
-            template = analyzer.current_template
+            source = '未选择视频标准'
             if analyzer.external_template is not None:
-                source = f'视频标准:{template}'
-            else:
-                source = f'内置模板:{template}'
+                source = f'视频标准:{analyzer.current_template}'
             latest_analysis = {
                 'score': analysis.get('overall_score', 0),
                 'feedback': analysis.get('feedback', []),
-                'template': template,
                 'source': source,
                 'fps': fps,
                 'timestamp': time.time()
             }
         
-        # 控制帧率（避免CPU过载）
-        time.sleep(0.01)
+        # 控制帧率（高刷新率，约 60fps）
+        time.sleep(0.002)
     
     # 清理
     cap.release()
@@ -191,8 +190,8 @@ def generate_frames():
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
         
-        # 控制流速率（约30fps）
-        time.sleep(0.033)
+        # 控制流速率（约60fps）
+        time.sleep(0.016)
 
 
 def get_video_standard(video_id):
@@ -288,6 +287,115 @@ def video_thumbnail(video_id):
     return Response(buf.tobytes(), mimetype='image/jpeg')
 
 
+@app.route('/api/videos/<video_id>', methods=['DELETE'])
+def delete_video(video_id):
+    """删除视频库中的视频"""
+    videos = load_video_library()
+    v = next((x for x in videos if x['id'] == video_id), None)
+    if not v:
+        return jsonify({'success': False, 'error': '未找到该视频'}), 404
+    # 山膀视频受保护
+    if '山膀' in v.get('title', '') or any('山膀' in t for t in v.get('tags', [])):
+        return jsonify({'success': False, 'error': '山膀示范视频不可删除'}), 403
+    path = os.path.join(VIDEO_DIR, v['filename'])
+    try:
+        os.remove(path)
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'删除失败：{e}'}), 500
+    # 清除缓存
+    video_standard_cache.pop(v['filename'], None)
+    # 同时从 videos_meta.json 中移除
+    if os.path.exists(META_FILE):
+        try:
+            with open(META_FILE, 'r', encoding='utf-8') as f:
+                meta = json.load(f)
+            meta.pop(v['filename'], None)
+            with open(META_FILE, 'w', encoding='utf-8') as f:
+                json.dump(meta, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+    return jsonify({'success': True})
+
+
+@app.route('/api/videos/<video_id>', methods=['PUT'])
+def update_video_meta(video_id):
+    """更新视频分类/标题"""
+    videos = load_video_library()
+    v = next((x for x in videos if x['id'] == video_id), None)
+    if not v:
+        return jsonify({'success': False, 'error': '未找到该视频'}), 404
+    data = request.get_json() or {}
+    category = (data.get('category') or '').strip()
+    title = (data.get('title') or '').strip()
+
+    meta = {}
+    if os.path.exists(META_FILE):
+        try:
+            with open(META_FILE, 'r', encoding='utf-8') as f:
+                meta = json.load(f)
+        except Exception:
+            pass
+    entry = meta.get(v['filename'], {})
+    if category:
+        entry['category'] = category
+    if title:
+        entry['title'] = title
+    if entry:
+        meta[v['filename']] = entry
+    try:
+        with open(META_FILE, 'w', encoding='utf-8') as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'保存失败：{e}'}), 500
+    return jsonify({'success': True, 'category': entry.get('category', v['category']),
+                    'title': entry.get('title', v['title'])})
+
+
+@app.route('/api/upload', methods=['POST'])
+def upload_video():
+    """用户上传舞蹈视频到视频库，并自动分析动作"""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': '未选择文件'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'error': '文件名为空'}), 400
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in VIDEO_EXTS:
+        return jsonify({'success': False, 'error': f'不支持的文件格式 {ext}，支持：{", ".join(VIDEO_EXTS)}'}), 400
+
+    filename = secure_filename(file.filename)
+    # 重名处理：添加序号
+    save_path = os.path.join(VIDEO_DIR, filename)
+    base, ext2 = os.path.splitext(filename)
+    counter = 1
+    while os.path.exists(save_path):
+        filename = f'{base}_{counter}{ext2}'
+        save_path = os.path.join(VIDEO_DIR, filename)
+        counter += 1
+
+    file.save(save_path)
+
+    # 自动分析视频动作
+    metrics = None
+    try:
+        metrics = extract_standard_metrics(save_path)
+    except Exception:
+        pass
+
+    # 清除视频库缓存（下次访问时重新扫描）
+    video_standard_cache.clear()
+
+    return jsonify({
+        'success': True,
+        'filename': filename,
+        'title': os.path.splitext(filename)[0],
+        'metrics_count': len(metrics) if metrics else 0,
+        'can_use': metrics is not None
+    })
+
+
 @app.route('/api/use_video', methods=['POST'])
 def use_video():
     """选中视频，提取标准姿态，用于实时矫正"""
@@ -310,19 +418,6 @@ def use_video():
         'video_url': f"/video/{v['filename']}",
         'metrics_count': len(metrics)
     })
-
-
-@app.route('/api/set_template', methods=['POST'])
-def set_template():
-    """切换内置动作模板"""
-    data = request.get_json() or {}
-    template_name = data.get('template', 'stand')
-
-    with lock:
-        ok = analyzer.set_template(template_name)
-    if not ok:
-        return jsonify({'success': False, 'error': f'未知模板: {template_name}'}), 400
-    return jsonify({'success': True, 'template': template_name})
 
 
 @app.route('/api/start', methods=['POST'])
@@ -382,7 +477,7 @@ def coach_status():
 
 @app.route('/api/stats')
 def api_stats():
-    """获取训练统计：累计次数 / 累计时长 / 今日数据 / 手动会话状态"""
+    """获取训练统计：累计次数 / 累计时长 / 今日数据 / 手动会话状态 / 历史得分"""
     with stats_lock:
         stats = load_stats()
         today = time.strftime('%Y-%m-%d')
@@ -392,6 +487,7 @@ def api_stats():
             'today_seconds': round(stats['daily_seconds'].get(today, 0.0), 1),
             'today_sessions': stats['daily_sessions'].get(today, 0),
             'today': today,
+            'session_scores': stats.get('session_scores', []),
             'manual_active': _manual_active,
             'manual_elapsed': round(time.time() - _manual_start, 1) if (_manual_active and _manual_start is not None) else 0.0
         })
@@ -400,11 +496,12 @@ def api_stats():
 @app.route('/api/training/start', methods=['POST'])
 def training_start():
     """手动开始一次训练：计一次会话并开始计时"""
-    global _manual_active, _manual_start
+    global _manual_active, _manual_start, _session_score_samples
     with stats_lock:
         if not _manual_active:
             _manual_active = True
             _manual_start = time.time()
+            _session_score_samples = []  # 重置分数采样
             stats = load_stats()
             today = time.strftime('%Y-%m-%d')
             stats['total_sessions'] += 1
@@ -415,8 +512,8 @@ def training_start():
 
 @app.route('/api/training/stop', methods=['POST'])
 def training_stop():
-    """手动结束当前训练会话：把本次时长计入累计并停止"""
-    global _manual_active, _manual_start
+    """手动结束当前训练会话：把本次时长计入累计并停止，并记录本次平均得分"""
+    global _manual_active, _manual_start, _session_score_samples
     with stats_lock:
         if _manual_active and _manual_start is not None:
             elapsed = time.time() - _manual_start
@@ -424,20 +521,49 @@ def training_stop():
             today = time.strftime('%Y-%m-%d')
             stats['total_seconds'] += elapsed
             stats['daily_seconds'][today] = stats['daily_seconds'].get(today, 0.0) + elapsed
+
+            # 计算本次训练平均得分并保存
+            if _session_score_samples:
+                avg_score = round(sum(_session_score_samples) / len(_session_score_samples), 1)
+            else:
+                avg_score = 0
+            stats['session_scores'].append({
+                'date': today,
+                'avg_score': avg_score,
+                'duration': round(elapsed, 1)
+            })
+            # 只保留最近 60 次记录
+            if len(stats['session_scores']) > 60:
+                stats['session_scores'] = stats['session_scores'][-60:]
+
             _manual_active = False
             _manual_start = None
+            _session_score_samples = []
             save_stats()
         return jsonify({'success': True, 'manual_active': _manual_active})
+
+
+@app.route('/api/score/record', methods=['POST'])
+def record_score():
+    """在手动训练期间记录当前分数样本"""
+    global _session_score_samples
+    data = request.get_json() or {}
+    score = data.get('score')
+    if score is not None and _manual_active:
+        with stats_lock:
+            _session_score_samples.append(float(score))
+    return jsonify({'success': True, 'samples': len(_session_score_samples)})
 
 
 @app.route('/api/stats/reset', methods=['POST'])
 def api_stats_reset():
     """清零全部训练统计（同时结束手动会话）"""
-    global _training_stats, _manual_active, _manual_start
+    global _training_stats, _manual_active, _manual_start, _session_score_samples
     with stats_lock:
         _training_stats = _default_stats()
         _manual_active = False
         _manual_start = None
+        _session_score_samples = []
         save_stats()
     return jsonify({'success': True})
 
