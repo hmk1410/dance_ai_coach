@@ -2,7 +2,7 @@
 Flask主程序：提供视频流服务、舞蹈视频库与Web界面
 """
 
-from flask import Flask, render_template, Response, jsonify, request, send_from_directory
+from flask import Flask, render_template, Response, jsonify, request, send_from_directory, session
 from werkzeug.utils import secure_filename
 import cv2
 import threading
@@ -12,8 +12,13 @@ import json
 from pose_analyzer import PoseAnalyzer
 from standard_from_video import extract_standard_metrics
 from dance_coach import ask_dance_coach, is_configured, load_config
+from user_auth import (init_auth, login_required, admin_required,
+                       register, login, logout, current_user, current_is_admin,
+                       _user_public, get_llm_config, save_llm_config,
+                       llm_config_response)
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('DANCE_SECRET', 'dance-coach-secret-2026-verify-works-001')
 
 # ========== 全局状态 ==========
 camera = None           # 摄像头对象
@@ -143,6 +148,9 @@ def processing_loop():
         if not ret:
             continue
 
+        # 镜像显示：画面像照镜子一样左右翻转
+        frame = cv2.flip(frame, 1)
+
         frame_count += 1
         now = time.time()
         if now - fps_start >= 1.0:
@@ -223,6 +231,147 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/admin')
+def admin_page():
+    """后台管理页面（前端负责鉴权跳转）"""
+    return render_template('admin.html')
+
+
+# ========== 用户认证 ==========
+
+@app.route('/api/auth/status')
+def auth_status():
+    """获取当前登录状态"""
+    u = current_user()
+    if not u:
+        return jsonify({'logged_in': False})
+    return jsonify({'logged_in': True, 'user': _user_public(u)})
+
+
+@app.route('/api/auth/register', methods=['POST'])
+def auth_register():
+    data = request.get_json() or {}
+    ok, msg = register(data.get('username', ''), data.get('password', ''), data.get('nickname', ''))
+    if not ok:
+        return jsonify({'success': False, 'error': msg}), 400
+    return jsonify({'success': True, 'message': msg})
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def auth_login():
+    data = request.get_json() or {}
+    ok, result = login(data.get('username', ''), data.get('password', ''))
+    if not ok:
+        return jsonify({'success': False, 'error': result}), 401
+    session['uid'] = result['id']
+    return jsonify({'success': True, 'user': _user_public(result)})
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def auth_logout():
+    logout()
+    return jsonify({'success': True})
+
+
+# ========== 后台管理 ==========
+
+@app.route('/api/admin/users')
+@admin_required
+def admin_users():
+    """管理员：用户列表"""
+    import sqlite3
+    from user_auth import DB_FILE
+    users = []
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute('SELECT * FROM users ORDER BY id').fetchall()
+        for r in rows:
+            u = dict(r)
+            users.append({
+                'id': u['id'],
+                'username': u['username'],
+                'nickname': u['nickname'],
+                'is_admin': bool(u['is_admin']),
+                'is_active': bool(u['is_active']),
+                'created_at': u['created_at'],
+            })
+        conn.close()
+    except Exception:
+        pass
+    return jsonify({'success': True, 'users': users})
+
+
+@app.route('/api/admin/users/<int:uid>', methods=['PATCH'])
+@admin_required
+def admin_patch_user(uid):
+    """管理员：封禁/解封、设/撤管理员"""
+    import sqlite3
+    from user_auth import DB_FILE, current_user
+    me = current_user()
+    data = request.get_json() or {}
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'success': False, 'error': '用户不存在'}), 404
+    u = dict(row)
+
+    if 'is_active' in data:
+        if uid == me['id'] and not data.get('is_active'):
+            conn.close()
+            return jsonify({'success': False, 'error': '不能封禁自己'}), 400
+        conn.execute('UPDATE users SET is_active=? WHERE id=?', (1 if data['is_active'] else 0, uid))
+    if 'is_admin' in data:
+        if uid == me['id'] and not data.get('is_admin'):
+            other_admin = conn.execute('SELECT COUNT(*) FROM users WHERE is_admin=1 AND is_active=1 AND id<>?', (uid,)).fetchone()[0]
+            if other_admin == 0:
+                conn.close()
+                return jsonify({'success': False, 'error': '不能取消自己管理员权限，至少保留一名管理员'}), 400
+        conn.execute('UPDATE users SET is_admin=? WHERE id=?', (1 if data['is_admin'] else 0, uid))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/admin/stats')
+@admin_required
+def admin_stats():
+    """管理员：数据看板"""
+    import sqlite3
+    from user_auth import DB_FILE
+    stats = load_stats()
+    videos = load_video_library()
+
+    user_count = 0
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        user_count = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+        conn.close()
+    except Exception:
+        pass
+
+    session_scores = stats.get('session_scores', [])
+    # 近7天训练趋势（按日期统计训练次数）
+    daily = {}
+    for s in session_scores:
+        d = s.get('date', '')
+        daily[d] = daily.get(d, 0) + 1
+
+    return jsonify({
+        'success': True,
+        'stats': {
+            'users': user_count,
+            'videos': len(videos),
+            'total_sessions': stats.get('total_sessions', 0),
+            'total_seconds': round(stats.get('total_seconds', 0.0), 1),
+            'avg_score': round(sum(s.get('avg_score', 0) for s in session_scores) / len(session_scores), 1) if session_scores else 0,
+            'daily_trend': daily,
+        }
+    })
+
+
 @app.route('/video_feed')
 def video_feed():
     """视频流接口"""
@@ -237,12 +386,14 @@ def serve_video(filename):
 
 
 @app.route('/api/analysis')
+@login_required
 def get_analysis():
     """获取当前分析结果（JSON）"""
     return jsonify(latest_analysis)
 
 
 @app.route('/api/videos')
+@login_required
 def api_videos():
     """视频库列表 + 搜索（?q=关键词）"""
     q = request.args.get('q', '').strip().lower()
@@ -272,6 +423,7 @@ def get_video_frame(video_path, frame_ratio=0.2):
 
 
 @app.route('/api/videos/<video_id>/thumbnail')
+@login_required
 def video_thumbnail(video_id):
     """视频缩略图接口"""
     videos = load_video_library()
@@ -288,6 +440,7 @@ def video_thumbnail(video_id):
 
 
 @app.route('/api/videos/<video_id>', methods=['DELETE'])
+@admin_required
 def delete_video(video_id):
     """删除视频库中的视频"""
     videos = load_video_library()
@@ -318,6 +471,7 @@ def delete_video(video_id):
 
 
 @app.route('/api/videos/<video_id>', methods=['PUT'])
+@admin_required
 def update_video_meta(video_id):
     """更新视频分类/标题"""
     videos = load_video_library()
@@ -352,6 +506,7 @@ def update_video_meta(video_id):
 
 
 @app.route('/api/upload', methods=['POST'])
+@login_required
 def upload_video():
     """用户上传舞蹈视频到视频库，并自动分析动作"""
     if 'file' not in request.files:
@@ -377,6 +532,29 @@ def upload_video():
 
     file.save(save_path)
 
+    # 可选的标题与分类（写入 videos_meta.json）
+    title = (request.form.get('title') or '').strip()
+    category = (request.form.get('category') or '').strip()
+    if title or category:
+        meta = {}
+        if os.path.exists(META_FILE):
+            try:
+                with open(META_FILE, 'r', encoding='utf-8') as f:
+                    meta = json.load(f)
+            except Exception:
+                pass
+        entry = meta.get(filename, {})
+        if title:
+            entry['title'] = title
+        if category:
+            entry['category'] = category
+        meta[filename] = entry
+        try:
+            with open(META_FILE, 'w', encoding='utf-8') as f:
+                json.dump(meta, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
     # 自动分析视频动作
     metrics = None
     try:
@@ -390,13 +568,15 @@ def upload_video():
     return jsonify({
         'success': True,
         'filename': filename,
-        'title': os.path.splitext(filename)[0],
+        'title': title or os.path.splitext(filename)[0],
+        'category': category or '未分类',
         'metrics_count': len(metrics) if metrics else 0,
         'can_use': metrics is not None
     })
 
 
 @app.route('/api/use_video', methods=['POST'])
+@login_required
 def use_video():
     """选中视频，提取标准姿态，用于实时矫正"""
     data = request.get_json() or {}
@@ -421,6 +601,7 @@ def use_video():
 
 
 @app.route('/api/start', methods=['POST'])
+@login_required
 def start():
     """启动处理"""
     global is_running
@@ -436,6 +617,7 @@ def start():
 
 
 @app.route('/api/stop', methods=['POST'])
+@login_required
 def stop():
     """停止处理"""
     global is_running
@@ -446,6 +628,7 @@ def stop():
 
 
 @app.route('/api/chat', methods=['POST'])
+@login_required
 def api_chat():
     """AI舞蹈教练问答接口"""
     data = request.get_json() or {}
@@ -458,24 +641,52 @@ def api_chat():
     with lock:
         context = latest_analysis.get('source', '') or ''
 
-    answer, err = ask_dance_coach(message, history, context=context)
+    # 用户自己的 Key 优先；未配置则回退全局或内置免费答疑引擎
+    user_llm = None
+    me = current_user()
+    if me:
+        user_llm = get_llm_config(me['id'])
+
+    answer, err = ask_dance_coach(message, history, context=context, user_llm=user_llm)
     if err:
         return jsonify({'success': False, 'error': err})
     return jsonify({'success': True, 'reply': answer})
 
 
 @app.route('/api/coach/status')
+@login_required
 def coach_status():
-    """查询舞蹈教练是否已配置 API Key"""
+    """查询舞蹈教练 AI 配置状态（来源：用户 Key / 全局 / 内置引擎）"""
     cfg = load_config()
+    me = current_user()
+    llm = llm_config_response(me['id']) if me else {}
     return jsonify({
         'configured': is_configured(),
         'model': cfg.get('deepseek_model', 'deepseek-chat'),
-        'base_url': cfg.get('deepseek_base_url', 'https://api.deepseek.com')
+        'base_url': cfg.get('deepseek_base_url', 'https://api.deepseek.com'),
+        'source': llm.get('source', 'none'),
+        'source_desc': llm.get('source_desc', ''),
+        'has_user_key': llm.get('has_user_key', False),
     })
 
 
+@app.route('/api/llm/config', methods=['GET', 'POST'])
+@login_required
+def api_llm_config():
+    """仿青就业：读取 / 保存当前用户的 LLM 配置"""
+    me = current_user()
+    if request.method == 'GET':
+        return jsonify({'success': True, **llm_config_response(me['id'])})
+    data = request.get_json() or {}
+    save_llm_config(me['id'],
+                    api_key=data.get('api_key') or '',
+                    base_url=data.get('base_url') or '',
+                    model=data.get('model') or '')
+    return jsonify({'success': True, **llm_config_response(me['id'])})
+
+
 @app.route('/api/stats')
+@login_required
 def api_stats():
     """获取训练统计：累计次数 / 累计时长 / 今日数据 / 手动会话状态 / 历史得分"""
     with stats_lock:
@@ -494,6 +705,7 @@ def api_stats():
 
 
 @app.route('/api/training/start', methods=['POST'])
+@login_required
 def training_start():
     """手动开始一次训练：计一次会话并开始计时"""
     global _manual_active, _manual_start, _session_score_samples
@@ -511,6 +723,7 @@ def training_start():
 
 
 @app.route('/api/training/stop', methods=['POST'])
+@login_required
 def training_stop():
     """手动结束当前训练会话：把本次时长计入累计并停止，并记录本次平均得分"""
     global _manual_active, _manual_start, _session_score_samples
@@ -544,6 +757,7 @@ def training_stop():
 
 
 @app.route('/api/score/record', methods=['POST'])
+@login_required
 def record_score():
     """在手动训练期间记录当前分数样本"""
     global _session_score_samples
@@ -556,6 +770,7 @@ def record_score():
 
 
 @app.route('/api/stats/reset', methods=['POST'])
+@admin_required
 def api_stats_reset():
     """清零全部训练统计（同时结束手动会话）"""
     global _training_stats, _manual_active, _manual_start, _session_score_samples
@@ -571,6 +786,9 @@ def api_stats_reset():
 # ========== 启动 ==========
 
 if __name__ == '__main__':
+    # 初始化用户数据库（首次启动自动建表 + 种子管理员）
+    init_auth()
+
     # 启动时自动开始处理
     is_running = True
     thread = threading.Thread(target=processing_loop)

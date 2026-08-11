@@ -93,6 +93,19 @@
         .live-grid { display: grid; grid-template-columns: 1fr 360px; gap: 20px; align-items: start; }
         .live-left { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 
+        /* 对比布局：实时画面 与 标准视频 左右对半 */
+        .compare-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+        }
+        .zoom-btn {
+            margin-left: auto; width: 30px; height: 30px; border-radius: 8px;
+            border: 1px solid var(--border); background: rgba(255,255,255,0.06);
+            color: var(--text); font-size: 14px; cursor: pointer; transition: 0.2s;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .zoom-btn:hover { background: var(--accent); border-color: var(--accent); }
+        .std-meta { padding: 0 4px; font-size: 13px; color: var(--muted); display: flex; gap: 6px; }
+
         .video-card {
             background: var(--card); backdrop-filter: blur(10px);
             border: 1px solid var(--border); border-radius: var(--radius);
@@ -320,8 +333,52 @@
         }
         .modal-close:hover { background: rgba(255,255,255,0.25); }
 
+        /* ============ 大模型配置弹窗 ============ */
+        #llm-modal .modal-inner { background: #fff; color: #1a1a2e; padding: 24px; }
+        #llm-modal .modal-close { background: rgba(0,0,0,0.15); color: #1a1a2e; }
+        #llm-modal .modal-close:hover { background: rgba(0,0,0,0.3); color: #fff; }
+        #llm-modal h3 { color: #1a1a2e; }
+        .llm-tip { font-size: 13px; color: #555; line-height: 1.7; margin: 0 0 14px; }
+        #llm-modal .field label { display: block; font-size: 13px; color: #333; margin-bottom: 5px; font-weight: 600; }
+
+        /* ============ 登录遮罩 ============ */
+        .auth-mask {
+            position: fixed; inset: 0; z-index: 1000;
+            background: rgba(5, 8, 18, 0.92); backdrop-filter: blur(14px);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .auth-card {
+            width: 380px; max-width: 92vw; padding: 36px 30px;
+            background: rgba(22, 31, 56, 0.92); border: 1px solid var(--border);
+            border-radius: 20px; box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+            text-align: center;
+        }
+        .auth-logo {
+            width: 64px; height: 64px; margin: 0 auto 14px; border-radius: 18px;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            display: flex; align-items: center; justify-content: center;
+            font-size: 32px; box-shadow: 0 6px 20px rgba(109,141,255,0.45);
+        }
+        .auth-card h2 { font-size: 22px; letter-spacing: 2px; }
+        .auth-sub { color: var(--muted); font-size: 13px; margin: 6px 0 22px; }
+        .auth-tabs { display: flex; gap: 6px; margin-bottom: 18px; }
+        .auth-tab {
+            flex: 1; padding: 9px; border: none; background: rgba(255,255,255,0.05);
+            color: var(--muted); font-size: 14px; border-radius: 10px; cursor: pointer;
+            transition: 0.2s;
+        }
+        .auth-tab.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+        .auth-form { display: flex; flex-direction: column; gap: 12px; }
+        .auth-form input {
+            padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border);
+            background: rgba(255,255,255,0.06); color: var(--text); font-size: 14px; outline: none;
+        }
+        .auth-form input:focus { border-color: var(--accent); }
+        .auth-msg { margin-top: 12px; font-size: 13px; min-height: 18px; color: var(--yellow); }
+
         @media (max-width: 960px) {
             .live-grid { grid-template-columns: 1fr; }
+            .compare-grid { grid-template-columns: 1fr; }
             .header { flex-wrap: wrap; padding: 10px 16px; }
             .nav { margin-left: 0; order: 3; width: 100%; overflow-x: auto; }
             .nav .tab { flex: 1; justify-content: center; white-space: nowrap; }
@@ -347,7 +404,13 @@
             <button class="tab" data-page="coach" onclick="switchPage('coach')">🤖 舞蹈教练</button>
         </nav>
         <div class="spacer"></div>
-        <div class="live-pill"><span class="dot"></span><span id="live-text">实时分析中</span></div>
+        <div class="live-pill" style="display:none;"><span class="dot"></span><span id="live-text">实时分析中</span></div>
+        <div class="user-area" id="user-area" style="display:none; align-items:center; gap:10px;">
+            <span id="user-badge" style="font-size:13px; color:var(--muted);"></span>
+            <button class="btn ghost" onclick="openLlmConfig()" style="padding:6px 12px; font-size:13px;">⚙️ 大模型</button>
+            <button class="btn ghost admin-btn" id="admin-btn" onclick="location.href='/admin'" style="display:none; padding:6px 12px; font-size:13px;">🛠 后台管理</button>
+            <button class="btn ghost" onclick="doLogout()" style="padding:6px 12px; font-size:13px;">登出</button>
+        </div>
     </header>
 
     <main>
@@ -355,23 +418,34 @@
         <section class="page active" id="page-live">
             <div class="live-grid">
                 <div class="live-left">
-                    <div class="video-card">
-                        <div class="video-title">📹 你的实时画面</div>
-                        <div class="video-wrap">
-                            <img src="{{ url_for('video_feed') }}" alt="AI分析画面">
-                            <div class="video-overlay"><span class="dot"></span>LIVE</div>
+                    <div class="compare-grid">
+                        <div class="video-card">
+                            <div class="video-title">
+                                📹 你的实时画面
+                                <button class="zoom-btn" onclick="zoomFeed()" title="放大">⛶</button>
+                            </div>
+                            <div class="video-wrap">
+                                <img src="{{ url_for('video_feed') }}" alt="AI分析画面" id="feed-img">
+                                <div class="video-overlay"><span class="dot"></span>LIVE</div>
+                            </div>
+                        </div>
+
+                        <div class="video-card">
+                            <div class="video-title">
+                                📽️ 标准示范
+                                <button class="zoom-btn" onclick="zoomStandard()" title="放大">⛶</button>
+                            </div>
+                            <div class="video-wrap">
+                                <div class="standard-empty" id="std-empty">
+                                    到「视频库」搜索并选择一个舞蹈视频，系统会自动学习其中的标准动作，然后对照你的实时姿态进行矫正。
+                                </div>
+                                <video id="std-video" loop style="width:100%;"></video>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="standard-card">
-                        <div class="head">
-                            <span>📽️ 标准示范视频</span>
-                            <span id="std-title" style="font-size:12px;color:var(--muted);">未选择</span>
-                        </div>
-                        <div class="standard-empty" id="std-empty">
-                            到「视频库」搜索并选择一个舞蹈视频，系统会自动学习其中的标准动作，然后对照你的实时姿态进行矫正。
-                        </div>
-                        <video id="std-video" loop style="display:none;"></video>
+                    <div class="std-meta">
+                        <span>📽️ 当前标准：</span><span id="std-title" style="color:var(--muted);font-size:13px;">未选择</span>
                     </div>
                 </div>
 
@@ -491,9 +565,198 @@
         </div>
     </div>
 
+    <!-- 训练画面放大预览 -->
+    <div class="modal" id="zoom-modal" onclick="closeZoom()">
+        <div class="modal-inner zoom-inner" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeZoom()">&times;</button>
+            <img id="zoom-feed" src="" alt="实时画面" style="display:none; max-width:90vw; max-height:80vh;">
+            <video id="zoom-standard" controls loop style="display:none; max-width:90vw; max-height:80vh;"></video>
+            <div id="zoom-placeholder" style="color:#fff; font-size:16px; padding:40px;">暂无可放大的内容</div>
+        </div>
+    </div>
+
+    <!-- 大模型配置弹窗（仿青就业） -->
+    <div class="modal" id="llm-modal">
+        <div class="modal-inner" style="max-width:460px;" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeLlmConfig()">&times;</button>
+            <h3 style="margin:0 0 12px;">大模型配置</h3>
+            <p class="llm-tip">填写你自己的大模型 API Key，将覆盖全局配置。优先级：<b>用户 Key &gt; config.json 全局 &gt; 内置免费答疑引擎</b>。留空保存即清除用户配置。</p>
+            <div class="field" style="margin-bottom:12px;"><label>当前生效</label><input id="llm-source-desc" readonly style="background:var(--bg); color:var(--muted);"></div>
+            <div class="field" style="margin-bottom:12px;"><label>API Key</label><input id="llm-api-key" type="password" placeholder="留空保存表示清除用户配置" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px; background:#fff;"></div>
+            <div class="field" style="margin-bottom:12px;"><label>Base URL</label><input id="llm-base-url" placeholder="如 https://api.deepseek.com" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px; background:#fff;"></div>
+            <div class="field" style="margin-bottom:12px;"><label>模型名称</label><input id="llm-model" placeholder="如 deepseek-chat" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px; background:#fff;"></div>
+            <div id="llm-msg" style="font-size:13px; min-height:18px; color:var(--green); margin-bottom:8px;"></div>
+            <div class="form-actions" style="display:flex; justify-content:flex-end; gap:10px;">
+                <button class="btn ghost" onclick="closeLlmConfig()">取消</button>
+                <button class="btn" onclick="saveLlmConfig()">保存配置</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 登录/注册遮罩 -->
+    <div class="auth-mask" id="auth-mask" style="display:none;">
+        <div class="auth-card">
+            <div class="auth-logo">🪞</div>
+            <h2>舞镜·智芯</h2>
+            <p class="auth-sub">AI 智能舞蹈教练 · 请登录后使用</p>
+            <div class="auth-tabs">
+                <button class="auth-tab active" data-tab="login" onclick="switchAuthTab('login')">登录</button>
+                <button class="auth-tab" data-tab="register" onclick="switchAuthTab('register')">注册</button>
+            </div>
+            <div class="auth-form" id="auth-login">
+                <input id="login-username" type="text" placeholder="用户名" autocomplete="username">
+                <input id="login-password" type="password" placeholder="密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+                <button class="btn" onclick="doLogin()" style="width:100%;">登 录</button>
+            </div>
+            <div class="auth-form" id="auth-register" style="display:none;">
+                <input id="reg-username" type="text" placeholder="用户名（2~20字符）" autocomplete="username">
+                <input id="reg-nickname" type="text" placeholder="昵称（可选）">
+                <input id="reg-password" type="password" placeholder="密码（至少6位）" autocomplete="new-password">
+                <input id="reg-password2" type="password" placeholder="确认密码" autocomplete="new-password" onkeydown="if(event.key==='Enter')doRegister()">
+                <button class="btn" onclick="doRegister()" style="width:100%;">注 册</button>
+            </div>
+            <div class="auth-msg" id="auth-msg"></div>
+        </div>
+    </div>
+
     <div class="toast" id="toast"></div>
 
     <script>
+        // ============ 登录 / 用户 ============
+        let authUser = null;
+
+        function switchAuthTab(tab) {
+            document.querySelectorAll('.auth-tab').forEach(b =>
+                b.classList.toggle('active', b.dataset.tab === tab));
+            document.getElementById('auth-login').style.display = tab === 'login' ? 'flex' : 'none';
+            document.getElementById('auth-register').style.display = tab === 'register' ? 'flex' : 'none';
+            document.getElementById('auth-msg').textContent = '';
+        }
+
+        function authMsg(msg, isError) {
+            const el = document.getElementById('auth-msg');
+            el.textContent = msg;
+            el.style.color = isError ? 'var(--red)' : 'var(--green)';
+        }
+
+        function checkAuth() {
+            return fetch('/api/auth/status').then(r => r.json()).then(d => {
+                if (d.logged_in) {
+                    authUser = d.user;
+                    applyUserUI();
+                    hideAuth();
+                    startApp();
+                    return true;
+                }
+                showAuth();
+                return false;
+            }).catch(() => { showAuth(); return false; });
+        }
+
+        function applyUserUI() {
+            const area = document.getElementById('user-area');
+            area.style.display = 'flex';
+            document.getElementById('user-badge').textContent = '👤 ' + (authUser.nickname || authUser.username);
+            const adminBtn = document.getElementById('admin-btn');
+            adminBtn.style.display = authUser.is_admin ? '' : 'none';
+        }
+
+        function showAuth() {
+            document.getElementById('auth-mask').style.display = 'flex';
+        }
+        function hideAuth() {
+            document.getElementById('auth-mask').style.display = 'none';
+        }
+
+        function doLogin() {
+            const username = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value;
+            if (!username || !password) { authMsg('请输入用户名和密码', true); return; }
+            authMsg('登录中…');
+            fetch('/api/auth/login', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            }).then(r => r.json()).then(d => {
+                if (!d.success) { authMsg(d.error || '登录失败', true); return; }
+                authUser = d.user;
+                applyUserUI();
+                hideAuth();
+                authMsg('登录成功！');
+                document.getElementById('login-password').value = '';
+                startApp();
+            }).catch(() => authMsg('网络错误', true));
+        }
+
+        function doRegister() {
+            const username = document.getElementById('reg-username').value.trim();
+            const nickname = document.getElementById('reg-nickname').value.trim();
+            const p1 = document.getElementById('reg-password').value;
+            const p2 = document.getElementById('reg-password2').value;
+            if (!username || !p1) { authMsg('请输入用户名和密码', true); return; }
+            if (p1 !== p2) { authMsg('两次密码不一致', true); return; }
+            authMsg('注册中…');
+            fetch('/api/auth/register', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password: p1, nickname })
+            }).then(r => r.json()).then(d => {
+                if (!d.success) { authMsg(d.error || '注册失败', true); return; }
+                authMsg('注册成功，请登录');
+                switchAuthTab('login');
+                document.getElementById('login-username').value = username;
+            }).catch(() => authMsg('网络错误', true));
+        }
+
+        function doLogout() {
+            fetch('/api/auth/logout', { method: 'POST' })
+                .then(() => location.reload())
+                .catch(() => location.reload());
+        }
+
+        // ============ 大模型配置（仿青就业） ============
+        function openLlmConfig() {
+            const modal = document.getElementById('llm-modal');
+            modal.classList.add('show');
+            document.getElementById('llm-msg').textContent = '加载中…';
+            fetch('/api/llm/config').then(r => r.json()).then(d => {
+                if (!d.success) { document.getElementById('llm-msg').textContent = d.error || '加载失败'; return; }
+                document.getElementById('llm-source-desc').value = d.source_desc || '';
+                document.getElementById('llm-api-key').value = '';
+                document.getElementById('llm-api-key').placeholder = d.has_user_key ? ('已配置：' + d.api_key_masked + '（留空保存则清除）') : '尚未配置用户 Key';
+                document.getElementById('llm-base-url').value = d.base_url || '';
+                document.getElementById('llm-model').value = d.model || '';
+                document.getElementById('llm-msg').textContent = '';
+            }).catch(() => { document.getElementById('llm-msg').textContent = '网络错误'; });
+        }
+
+        function closeLlmConfig() {
+            document.getElementById('llm-modal').classList.remove('show');
+        }
+
+        function saveLlmConfig() {
+            const apiKey = document.getElementById('llm-api-key').value.trim();
+            const baseUrl = document.getElementById('llm-base-url').value.trim();
+            const model = document.getElementById('llm-model').value.trim();
+            fetch('/api/llm/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: apiKey, base_url: baseUrl, model: model })
+            }).then(r => r.json()).then(d => {
+                if (!d.success) { document.getElementById('llm-msg').textContent = d.error || '保存失败'; return; }
+                document.getElementById('llm-source-desc').value = d.source_desc || '';
+                document.getElementById('llm-api-key').value = '';
+                document.getElementById('llm-api-key').placeholder = d.has_user_key ? ('已配置：' + d.api_key_masked + '（留空保存则清除）') : '尚未配置用户 Key';
+                document.getElementById('llm-msg').textContent = '已保存 ✓ 现在使用：' + d.source_desc;
+                showToast('大模型配置已保存');
+            }).catch(() => { document.getElementById('llm-msg').textContent = '网络错误'; });
+        }
+
+        function apiFetch(url, opts) {
+            return fetch(url, opts).then(r => {
+                if (r.status === 401) { location.reload(); throw new Error('未登录'); }
+                return r.json();
+            });
+        }
+
         const NAME_MAP = {
             'left_shoulder_abduction': '左肩外展', 'right_shoulder_abduction': '右肩外展',
             'left_elbow_extension': '左肘伸展', 'right_elbow_extension': '右肘伸展',
@@ -610,9 +873,13 @@
         function uploadVideo(ev) {
             const file = ev.target.files[0];
             if (!file) return;
+            const title = (prompt('给这段视频起个名字（可选，留空则使用文件名）：') || '').trim();
+            const category = (prompt('选择分类，如：古典舞 / 现代舞 / 民族舞 …（可选，留空则不分类）：') || '').trim();
             showToast('正在上传并分析视频动作，请稍候…');
             const formData = new FormData();
             formData.append('file', file);
+            if (title) formData.append('title', title);
+            if (category) formData.append('category', category);
             fetch('/api/upload', { method: 'POST', body: formData })
                 .then(r => r.json()).then(d => {
                     ev.target.value = '';
@@ -653,6 +920,42 @@
             const video = document.getElementById('modal-video');
             video.pause();
             video.src = '';
+            modal.classList.remove('show');
+        }
+
+        // ============ 训练画面放大 ============
+        function zoomFeed() {
+            const modal = document.getElementById('zoom-modal');
+            document.getElementById('zoom-feed').style.display = 'block';
+            document.getElementById('zoom-feed').src = document.getElementById('feed-img').src;
+            document.getElementById('zoom-standard').style.display = 'none';
+            document.getElementById('zoom-standard').pause();
+            document.getElementById('zoom-placeholder').style.display = 'none';
+            modal.classList.add('show');
+        }
+
+        function zoomStandard() {
+            const video = document.getElementById('std-video');
+            const modal = document.getElementById('zoom-modal');
+            const zv = document.getElementById('zoom-standard');
+            if (!video.src) {
+                document.getElementById('zoom-placeholder').style.display = 'block';
+                document.getElementById('zoom-feed').style.display = 'none';
+                document.getElementById('zoom-standard').style.display = 'none';
+                modal.classList.add('show');
+                return;
+            }
+            zv.src = video.src;
+            zv.style.display = 'block';
+            document.getElementById('zoom-feed').style.display = 'none';
+            document.getElementById('zoom-placeholder').style.display = 'none';
+            modal.classList.add('show');
+            zv.play().catch(() => {});
+        }
+
+        function closeZoom() {
+            const modal = document.getElementById('zoom-modal');
+            document.getElementById('zoom-standard').pause();
             modal.classList.remove('show');
         }
 
@@ -927,10 +1230,12 @@
         function checkCoachStatus() {
             fetch('/api/coach/status').then(r => r.json()).then(d => {
                 const el = document.getElementById('coach-sub');
-                if (d.configured) {
-                    el.textContent = `DeepSeek 已就绪 · ${d.model}`;
+                if (d.source === 'user') {
+                    el.textContent = `大模型已就绪（你的 Key）· ${d.model}`;
+                } else if (d.source === 'global') {
+                    el.textContent = `大模型已就绪（全局配置）· ${d.model}`;
                 } else {
-                    el.textContent = '尚未配置 API Key：编辑项目根目录 config.json，填写 deepseek_api_key 后重启服务';
+                    el.textContent = '内置免费答疑引擎（未配置 API Key，可在右上角「⚙️ 大模型」填写自己的 Key）';
                 }
             }).catch(() => {
                 document.getElementById('coach-sub').textContent = '状态获取失败';
@@ -1012,15 +1317,20 @@
             }).catch(() => {});
         }
 
-        setInterval(updateAnalysis, 200);
-        updateAnalysis();
-        loadLibrary('');
-        autoLoadShanBang();  // 首次打开自动加载山膀视频
-        loadStats();
-        setInterval(loadStats, 1000);
-        setInterval(updateManualTimer, 1000);
-        updateManualBtn();   // 初始隐藏"实时分析中"
-        checkCoachStatus();
+        function startApp() {
+            setInterval(updateAnalysis, 200);
+            updateAnalysis();
+            loadLibrary('');
+            autoLoadShanBang();
+            loadStats();
+            setInterval(loadStats, 1000);
+            setInterval(updateManualTimer, 1000);
+            updateManualBtn();
+            checkCoachStatus();
+        }
+
+        // 启动流程：先检查登录状态
+        checkAuth();
     </script>
 </body>
 </html>

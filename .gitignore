@@ -11,5 +11,11 @@ venv/
 training_stats.json
 *.log
 
+# Database
+users.db
+
+# IDE
+.idea/
+
 # Temp / backup
 main.txt

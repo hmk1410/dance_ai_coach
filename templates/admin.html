@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>舞镜·智芯 - 后台管理</title>
+    <style>
+        :root {
+            --bg: #0b1020; --bg2: #10172e; --card: rgba(22,31,56,0.85);
+            --accent: #6d8dff; --accent2: #a06cff; --green: #34f5a0;
+            --yellow: #ffc857; --red: #ff5c6c; --text: #eef1f8;
+            --muted: #9aa5bf; --border: rgba(255,255,255,0.08); --radius: 16px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: radial-gradient(1200px 600px at 20% -10%, #1c2a55 0%, transparent 60%),
+                        radial-gradient(1000px 500px at 110% 10%, #3a1e5e 0%, transparent 55%), var(--bg);
+            color: var(--text); min-height: 100vh;
+        }
+        .header {
+            display: flex; align-items: center; gap: 16px; padding: 16px 28px;
+            border-bottom: 1px solid var(--border); background: rgba(11,16,32,0.85);
+            backdrop-filter: blur(14px); position: sticky; top: 0; z-index: 50;
+        }
+        .header h1 { font-size: 19px; }
+        .header .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+        .spacer { flex: 1; }
+        .btn {
+            padding: 8px 16px; border: none; border-radius: 10px; cursor: pointer;
+            font-size: 13px; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2));
+            transition: 0.2s; text-decoration: none; display: inline-block;
+        }
+        .btn:hover { filter: brightness(1.12); }
+        .btn.ghost { background: rgba(255,255,255,0.06); border: 1px solid var(--border); }
+        .btn.small { padding: 5px 10px; font-size: 12px; }
+        .btn.green { background: linear-gradient(135deg, var(--green), #1fa884); }
+        .btn.red { background: linear-gradient(135deg, var(--red), #d13a4a); }
+        main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        .tabs { display: flex; gap: 8px; margin-bottom: 22px; }
+        .tab {
+            padding: 10px 22px; border: none; background: rgba(255,255,255,0.05);
+            color: var(--muted); font-size: 14px; border-radius: 10px; cursor: pointer;
+        }
+        .tab.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+        .panel { display: none; }
+        .panel.active { display: block; animation: fade 0.3s ease; }
+        @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+        /* 看板 */
+        .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .kpi {
+            background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 22px; text-align: center;
+        }
+        .kpi .v { font-size: 30px; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .kpi .l { color: var(--muted); font-size: 13px; margin-top: 6px; }
+        .trend { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+        .trend h3 { font-size: 15px; margin-bottom: 14px; }
+        .bars { display: flex; align-items: flex-end; gap: 8px; height: 140px; }
+        .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+        .bar { width: 100%; max-width: 46px; background: linear-gradient(180deg, var(--accent), var(--accent2)); border-radius: 6px 6px 0 0; min-height: 2px; transition: height 0.4s; }
+        .bar .label { font-size: 11px; color: var(--muted); }
+
+        /* 用户表 */
+        table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+        th, td { padding: 12px 14px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border); }
+        th { background: rgba(255,255,255,0.04); color: var(--muted); font-weight: 500; }
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; }
+        .badge.admin { background: rgba(160,108,255,0.2); color: var(--accent2); }
+        .badge.user { background: rgba(255,255,255,0.07); color: var(--muted); }
+        .badge.active { background: rgba(52,245,160,0.15); color: var(--green); }
+        .badge.banned { background: rgba(255,92,108,0.15); color: var(--red); }
+        .msg { padding: 10px 0; color: var(--yellow); font-size: 13px; min-height: 20px; }
+        .empty { color: var(--muted); text-align: center; padding: 40px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>🛠 舞镜·智芯 后台管理</h1>
+            <div class="sub">用户与数据管理</div>
+        </div>
+        <div class="spacer"></div>
+        <span id="who" style="color:var(--muted);font-size:13px;"></span>
+        <a class="btn ghost" href="/">← 返回应用</a>
+        <button class="btn ghost" onclick="logout()">登出</button>
+    </div>
+
+    <main>
+        <div class="tabs">
+            <button class="tab active" data-panel="dash" onclick="switchPanel('dash')">📊 数据看板</button>
+            <button class="tab" data-panel="users" onclick="switchPanel('users')">👥 用户管理</button>
+        </div>
+        <div class="msg" id="msg"></div>
+
+        <div class="panel active" id="panel-dash">
+            <div class="kpis">
+                <div class="kpi"><div class="v" id="k-users">-</div><div class="l">用户总数</div></div>
+                <div class="kpi"><div class="v" id="k-videos">-</div><div class="l">视频总数</div></div>
+                <div class="kpi"><div class="v" id="k-sessions">-</div><div class="l">训练总次数</div></div>
+                <div class="kpi"><div class="v" id="k-seconds">-</div><div class="l">累计训练时长(分)</div></div>
+                <div class="kpi"><div class="v" id="k-avg">-</div><div class="l">平均得分</div></div>
+            </div>
+            <div class="trend">
+                <h3>📈 最近训练趋势（按天）</h3>
+                <div class="bars" id="trend-bars"></div>
+            </div>
+        </div>
+
+        <div class="panel" id="panel-users">
+            <table>
+                <thead>
+                    <tr><th>ID</th><th>用户名</th><th>昵称</th><th>角色</th><th>状态</th><th>注册时间</th><th>操作</th></tr>
+                </thead>
+                <tbody id="user-tbody"></tbody>
+            </table>
+        </div>
+    </main>
+
+    <script>
+        let authUser = null;
+
+        function msg(text) {
+            document.getElementById('msg').textContent = text;
+        }
+
+        function api(url, opts) {
+            return fetch(url, opts).then(r => r.json().then(d => ({ status: r.status, d })));
+        }
+
+        function switchPanel(name) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.panel === name));
+            document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+            if (name === 'dash') loadDash();
+            if (name === 'users') loadUsers();
+        }
+
+        function logout() {
+            api('/api/auth/logout', { method: 'POST' }).then(() => location.href = '/');
+        }
+
+        function checkAuth() {
+            return api('/api/auth/status').then(({ status, d }) => {
+                if (!d.logged_in) { location.href = '/'; return false; }
+                authUser = d.user;
+                document.getElementById('who').textContent = '👤 ' + (d.user.nickname || d.user.username);
+                if (!d.user.is_admin) { msg('需要管理员权限'); setTimeout(() => location.href = '/', 1200); return false; }
+                return true;
+            });
+        }
+
+        function loadDash() {
+            api('/api/admin/stats').then(({ status, d }) => {
+                if (status !== 200) return;
+                const s = d.stats;
+                document.getElementById('k-users').textContent = s.users;
+                document.getElementById('k-videos').textContent = s.videos;
+                document.getElementById('k-sessions').textContent = s.total_sessions;
+                document.getElementById('k-seconds').textContent = Math.round(s.total_seconds / 60);
+                document.getElementById('k-avg').textContent = s.avg_score;
+                renderTrend(s.daily_trend || {});
+            });
+        }
+
+        function renderTrend(daily) {
+            const dates = Object.keys(daily).sort().slice(-7);
+            const box = document.getElementById('trend-bars');
+            if (!dates.length) { box.innerHTML = '<div class="empty">暂无训练数据</div>'; return; }
+            const max = Math.max(1, ...dates.map(d => daily[d]));
+            box.innerHTML = '';
+            dates.forEach(d => {
+                const col = document.createElement('div');
+                col.className = 'bar-col';
+                col.innerHTML = '<div class="bar" style="height:' + Math.max(4, daily[d] / max * 120) + 'px"></div>' +
+                                '<span class="label">' + daily[d] + '</span><span class="label" style="font-size:10px;">' + d.slice(5) + '</span>';
+                box.appendChild(col);
+            });
+        }
+
+        function loadUsers() {
+            api('/api/admin/users').then(({ status, d }) => {
+                if (status !== 200 || !d.users) return;
+                const tbody = document.getElementById('user-tbody');
+                tbody.innerHTML = '';
+                d.users.forEach(u => {
+                    const tr = document.createElement('tr');
+                    const isSelf = authUser && authUser.id === u.id;
+                    const actions = isSelf
+                        ? '<span style="color:var(--muted);font-size:12px;">（当前账号）</span>'
+                        : '<button class="btn small ' + (u.is_active ? 'red' : 'green') + '" onclick="toggleActive(' + u.id + ',' + u.is_active + ')">' + (u.is_active ? '封禁' : '解封') + '</button> ' +
+                          '<button class="btn small" onclick="toggleAdmin(' + u.id + ',' + !u.is_admin + ')">' + (u.is_admin ? '取消管理员' : '设为管理员') + '</button>';
+                    tr.innerHTML =
+                        '<td>' + u.id + '</td>' +
+                        '<td>' + u.username + '</td>' +
+                        '<td>' + (u.nickname || '-') + '</td>' +
+                        '<td><span class="badge ' + (u.is_admin ? 'admin' : 'user') + '">' + (u.is_admin ? '管理员' : '用户') + '</span></td>' +
+                        '<td><span class="badge ' + (u.is_active ? 'active' : 'banned') + '">' + (u.is_active ? '正常' : '已封禁') + '</span></td>' +
+                        '<td>' + new Date(u.created_at * 1000).toLocaleString() + '</td>' +
+                        '<td>' + actions + '</td>';
+                    tbody.appendChild(tr);
+                });
+            });
+        }
+
+        function toggleActive(id, willBan) {
+            if (!confirm('确定要' + (willBan ? '封禁' : '解封') + '该用户吗？')) return;
+            api('/api/admin/users/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !willBan }) })
+                .then(({ status, d }) => { if (status !== 200) msg(d.error || '操作失败'); else loadUsers(); });
+        }
+
+        function toggleAdmin(id, willGrant) {
+            if (!confirm('确定要' + (willGrant ? '设为管理员' : '取消管理员') + '吗？')) return;
+            api('/api/admin/users/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_admin: willGrant }) })
+                .then(({ status, d }) => { if (status !== 200) msg(d.error || '操作失败'); else loadUsers(); });
+        }
+
+        checkAuth().then(ok => { if (ok) loadDash(); });
+    </script>
+</body>
+</html>
