@@ -7,6 +7,8 @@
 - 实时姿态检测：基于 MediaPipe Pose 提取 33 个身体关键点
 - 实时训练：摄像头画面镜像显示，与标准舞蹈视频**左右并排对比**，支持点击放大预览
 - 舞蹈评分：与标准舞蹈视频对比，多维评分（姿态、对称性、幅度等）
+- **跟练模式（DTW 时序对齐）**：自动从标准视频提取姿态标准序列，逐帧与用户动作时序对齐评分，支持「跟练进度」实时反馈与关节偏差提示
+- 训练暂停：训练中可随时暂停/继续，暂停期间计时冻结、不计分
 - 视频库：自动扫描 `vidoe/` 目录构建视频库，支持上传（可选标题/分类）、搜索、分类、删除
 - AI 教练对话：三级优先级 **用户 Key > config.json 全局 > 内置免费答疑引擎**
   - 每个用户可在网页「⚙️ 大模型」自行配置自己的 API Key（加密存储，兼容任意 OpenAI 接口服务）
@@ -36,13 +38,17 @@ pip install -r requirements.txt
 
 不配置也能用——自动走内置免费答疑引擎。要启用大模型回答，二选一：
 
-- **全局配置**：编辑 `config.json`，填入你的 API Key：
+- **全局配置**：在项目根目录新建 `config.json`（该文件含 API Key，已从版本控制移除），填入你的 Key / 模型 / 接口：
 
   ```json
   {
-    "deepseek_api_key": "sk-xxx"
+    "deepseek_api_key": "你的API Key",
+    "deepseek_model": "glm-4-flash-250414",
+    "deepseek_base_url": "https://open.bigmodel.cn/api/paas/v4"
   }
   ```
+
+  推荐使用免费模型：智谱 **GLM-4-Flash**（`glm-4-flash-250414`，永久免费，接口 `https://open.bigmodel.cn/api/paas/v4`）。也可换成 DeepSeek、通义千问 Qwen 等任意 OpenAI 兼容接口。
 
 - **用户配置（推荐）**：启动后登录网页，点右上角「⚙️ 大模型」，填写自己的 API Key / Base URL / 模型名（兼容 OpenAI 接口格式 `/chat/completions`，如 DeepSeek、通义千问 Qwen 等）。留空保存即清除用户配置。
 
@@ -86,11 +92,12 @@ python run.py
 ├── dance_features.py          # 舞蹈特征提取
 ├── feedback_renderer.py       # 反馈渲染
 ├── standard_from_video.py     # 从视频提取标准动作
+├── dtw_tracker.py             # DTW 时序对齐（标准序列提取 + 在线对齐评分）
 ├── dance_coach.py             # AI 教练对话模块 + 内置免费答疑引擎
 ├── templates/                 # 前端页面（index / admin）
 ├── vidoe/                     # 舞蹈视频库
 ├── users.db                   # 用户数据库（运行时自动生成）
-└── config.json                # 全局配置文件
+└── config.json                # 全局配置文件（含 API Key，不入版本控制，需自行创建）
 ```
 
 ## 技术栈
@@ -100,4 +107,4 @@ python run.py
 - OpenCV
 - Flask
 - SQLite（标准库）
-- DeepSeek / 任意 OpenAI 兼容大模型 API
+- DeepSeek / 智谱 GLM / 任意 OpenAI 兼容大模型 API
