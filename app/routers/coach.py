@@ -29,7 +29,13 @@ def chat():
     user_llm = None
     me = current_user()
     if me:
-        user_llm = models.get_llm_config(me['id'])
+        try:
+            from dance_coach import _is_placeholder_key
+            ucfg = models.get_llm_config(me['id'])
+            if ucfg and not _is_placeholder_key(ucfg.get('api_key')):
+                user_llm = ucfg
+        except Exception:
+            user_llm = None
 
     answer, err = coach_service.ask(message, history, context=context, user_llm=user_llm)
     if err:

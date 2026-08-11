@@ -35,7 +35,8 @@ class PoseAnalyzer:
         
         self.current_template = '未选择'  # 当前使用的模板名称
         self.feedback_history = []       # 反馈历史
-        self.external_template = None    # 来自视频的外部标准模板
+        self.external_template = None    # 来自视频的外部标准模板（静态角度）
+        self.dtw_matcher = None          # DTW 时序对齐器（动态动作标准）
         
     def calculate_angle(self, a, b, c):
         """
@@ -155,7 +156,29 @@ class PoseAnalyzer:
         
         results['feedback'] = feedback
         results['overall_score'] = self._calculate_score(feedback)
-        
+
+        # ========== 4. DTW 时序对齐（动态动作标准优先） ==========
+        if self.dtw_matcher is not None:
+            try:
+                from dtw_tracker import normalize_pose
+                vec = normalize_pose(landmarks.landmark)
+                self.dtw_matcher.update(vec)
+                score = self.dtw_matcher.current_score
+                progress = min(self.dtw_matcher.L, self.dtw_matcher.current_index + 1)
+                total = self.dtw_matcher.L
+                dtw_feedback = [{
+                    'name': '跟练进度',
+                    'actual': progress,
+                    'standard': total,
+                    'deviation': round(progress / total * 100, 1),
+                    'level': 'good',
+                    'unit': '帧'
+                }] + list(self.dtw_matcher.last_feedback)
+                results['overall_score'] = int(round(score))
+                results['feedback'] = dtw_feedback
+            except Exception:
+                pass
+
         return results
     
     def _calculate_score(self, feedback):
@@ -312,6 +335,15 @@ class PoseAnalyzer:
         metrics: {指标名: (最小, 标准, 最大)}
         """
         self.external_template = metrics
+        self.current_template = name
+
+    def set_dtw(self, name, sequence):
+        """启用 DTW 时序对齐（动态动作标准，如广播体操）
+        sequence: 从标准视频提取的归一化姿态序列
+        """
+        from dtw_tracker import OnlineDtwMatcher
+        self.dtw_matcher = OnlineDtwMatcher(sequence)
+        self.external_template = None
         self.current_template = name
     
     def release(self):

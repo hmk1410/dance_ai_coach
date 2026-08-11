@@ -7,6 +7,7 @@ stats.py
 from flask import Blueprint, request, jsonify
 
 from .. import models
+from .. import state
 from ..services import stats as stats_service
 from ..security import login_required, admin_required
 
@@ -23,6 +24,20 @@ def get_stats():
 @login_required
 def training_start():
     return jsonify({'success': True, 'manual_active': stats_service.start_manual_session()})
+
+
+@bp.route('/api/training/pause', methods=['POST'])
+@login_required
+def training_pause():
+    stats_service.pause_manual_session()
+    return jsonify({'success': True, 'manual_paused': state._manual_paused})
+
+
+@bp.route('/api/training/resume', methods=['POST'])
+@login_required
+def training_resume():
+    stats_service.resume_manual_session()
+    return jsonify({'success': True, 'manual_paused': state._manual_paused})
 
 
 @bp.route('/api/training/stop', methods=['POST'])

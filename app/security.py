@@ -95,13 +95,17 @@ def admin_required(f):
 def llm_config_response(uid):
     """返回前端展示的 LLM 配置状态（source: user/global/none）"""
     cfg = models.get_llm_config(uid)
-    has_user_key = bool(cfg['api_key'])
+    try:
+        from dance_coach import _is_placeholder_key
+    except Exception:
+        _is_placeholder_key = lambda k: not bool(k)
+    has_user_key = bool(cfg['api_key']) and not _is_placeholder_key(cfg['api_key'])
     if has_user_key:
         source, source_desc = 'user', '用户自己的 Key（当前生效）'
     else:
         try:
             from .services.coach import load_global_config
-            if load_global_config().get('deepseek_api_key'):
+            if not _is_placeholder_key(load_global_config().get('deepseek_api_key')):
                 source, source_desc = 'global', 'config.json 全局配置（当前生效）'
             else:
                 source, source_desc = 'none', '未配置 API Key，使用内置免费答疑引擎'

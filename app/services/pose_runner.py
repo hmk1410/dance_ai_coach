@@ -61,7 +61,9 @@ def processing_loop():
         with state.lock:
             state.current_frame = processed_frame.copy()
             source = '未选择视频标准'
-            if state.analyzer.external_template is not None:
+            if state.analyzer.dtw_matcher is not None:
+                source = '跟练:' + state.analyzer.current_template
+            elif state.analyzer.external_template is not None:
                 source = '视频标准:' + state.analyzer.current_template
             state.latest_analysis = {
                 'score': analysis.get('overall_score', 0),

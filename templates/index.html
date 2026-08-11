@@ -476,6 +476,7 @@
                         <div class="score-wrap" style="gap:10px;">
                             <div class="source-box" id="manual-timer" style="font-size:20px;font-weight:700;letter-spacing:1px;">--:--</div>
                             <button class="btn" id="manual-btn" onclick="toggleTraining()" style="width:100%;">▶ 开始训练</button>
+                            <button class="btn" id="pause-btn" onclick="togglePause()" style="width:100%;display:none;">⏸ 暂停训练</button>
                             <div style="font-size:12px;color:var(--muted);text-align:center;">手动记录一次完整的训练，点击结束自动计入累计统计</div>
                         </div>
                     </div>
@@ -545,7 +546,7 @@
             <div class="coach-card">
                 <div class="coach-head">
                     <div class="coach-title">🤖 AI 舞蹈教练</div>
-                    <div class="coach-sub" id="coach-sub">基于 DeepSeek 大模型 · 检查配置中…</div>
+                    <div class="coach-sub" id="coach-sub">AI 教练 · 检查配置中…</div>
                 </div>
                 <div class="coach-body" id="chat-body">
                     <div class="msg bot"><div class="bubble">你好，我是你的 AI 舞蹈教练 🩰 关于舞蹈动作要领、姿态矫正、训练方法、古典舞手位（山膀/按掌等）都可以问我～</div></div>
@@ -763,7 +764,8 @@
             'spine_vertical': '脊柱垂直度', 'left_knee_extension': '左膝伸展',
             'right_knee_extension': '右膝伸展', 'hip_width': '髋部开度',
             'shoulder_symmetry': '双肩对称', 'elbow_symmetry': '双肘对称',
-            'left_arm_level': '左臂水平', 'right_arm_level': '右臂水平'
+            'left_arm_level': '左臂水平', 'right_arm_level': '右臂水平',
+            '跟练进度': '跟练进度'
         };
 
         const CIRC = 2 * Math.PI * 70;
@@ -775,6 +777,8 @@
         let currentKeyword = '';
         let toastTimer = null;
         let manualActive = false;        // 手动训练会话是否开启
+        let manualPaused = false;        // 手动训练是否暂停
+        let manualPausedAt = null;       // 暂停发生时刻（用于恢复时扣减）
         let manualElapsedStart = Date.now();
 
         // 训练统计
@@ -1015,7 +1019,13 @@
 
                 if (manualActive) {
                     // ===== 训练中：实时更新分数、角度、矫正提示 =====
-                    if (score !== lastScore) {
+                    if (manualPaused) {
+                        // 暂停：冻结分数与提示
+                        const list = document.getElementById('feedback-list');
+                        if (list.innerHTML.indexOf('已暂停') === -1) {
+                            list.innerHTML = '<div class="empty">训练已暂停，点击「继续训练」恢复</div>';
+                        }
+                    } else if (score !== lastScore) {
                         lastScore = score;
                         document.getElementById('score-text').textContent = score;
                         const circle = document.getElementById('score-circle');
@@ -1033,11 +1043,16 @@
                             const ic = item.level === 'good' ? '✓' : item.level === 'warning' ? '!' : '✗';
                             const div = document.createElement('div');
                             div.className = 'fb';
+                            const unit = item.unit || '°';
+                            const isDtw = item.unit === '帧' || item.unit === '偏差';
+                            const detail = isDtw
+                                ? (item.unit === '帧' ? `进度 ${item.actual}/${item.standard} 帧` : `偏差 ${item.deviation}`)
+                                : `当前 ${item.actual}${unit} | 标准 ${item.standard}${unit} | 偏差 ${item.deviation}${unit}`;
                             div.innerHTML = `
                                 <div class="icon ${lv}">${ic}</div>
                                 <div class="txt">
                                     <div class="nm">${NAME_MAP[item.name] || item.name}</div>
-                                    <div class="vl">当前 ${item.actual}° | 标准 ${item.standard}° | 偏差 ${item.deviation}°</div>
+                                    <div class="vl">${detail}</div>
                                 </div>`;
                             list.appendChild(div);
                         });
@@ -1064,8 +1079,8 @@
                 if (data.fps != null) fpsEl.textContent = data.fps;
                 if (data.timestamp) latEl.textContent = Math.max(0, Math.round((Date.now() / 1000 - data.timestamp) * 1000));
 
-                // 训练统计：只在手动训练期间记录分数
-                if (manualActive && data.feedback && data.feedback.length) {
+                // 训练统计：只在手动训练进行中（未暂停）记录分数
+                if (manualActive && !manualPaused && data.feedback && data.feedback.length) {
                     scores.push(score);
                     if (scores.length > 200) scores.shift();
                     // 每 2 秒向后台报告一次分数
@@ -1146,6 +1161,8 @@
                 } else if (!d.manual_active && manualActive) {
                     manualActive = false;
                 }
+                manualPaused = !!d.manual_paused;
+                if (!manualPaused) manualPausedAt = null;
                 updateManualBtn();
             }).catch(() => {});
         }
@@ -1174,6 +1191,7 @@
             }).then(r => r.json()).then(d => {
                 if (d.manual_active && !manualActive) {
                     manualActive = true;
+                    manualPaused = false;
                     manualElapsedStart = Date.now();
                     scores.length = 0;  // 清空本会话分数
                     // 开始播放标准视频
@@ -1185,6 +1203,7 @@
                     showToast('训练已开始，计时中…');
                 } else if (!d.manual_active && manualActive) {
                     manualActive = false;
+                    manualPaused = false;
                     // 暂停标准视频
                     const stdVid = document.getElementById('std-video');
                     stdVid.pause();
@@ -1195,8 +1214,38 @@
             }).catch(() => showToast('请求失败'));
         }
 
+        // ============ 训练暂停/继续 ============
+        function togglePause() {
+            const pausing = !manualPaused;
+            fetch('/api/training/' + (pausing ? 'pause' : 'resume'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(r => r.json()).then(d => {
+                if (d.manual_paused) {
+                    manualPaused = true;
+                    manualPausedAt = Date.now();
+                    const stdVid = document.getElementById('std-video');
+                    stdVid.pause();
+                    showToast('训练已暂停');
+                } else {
+                    // 继续：把暂停期间从计时中扣除
+                    if (manualPaused && manualPausedAt) {
+                        manualElapsedStart += (Date.now() - manualPausedAt);
+                    }
+                    manualPaused = false;
+                    manualPausedAt = null;
+                    const stdVid = document.getElementById('std-video');
+                    stdVid.play().catch(() => {});
+                    showToast('训练继续');
+                }
+                updateManualBtn();
+                loadStats();
+            }).catch(() => showToast('请求失败'));
+        }
+
         function updateManualBtn() {
             const btn = document.getElementById('manual-btn');
+            const pauseBtn = document.getElementById('pause-btn');
             const pill = document.querySelector('.live-pill');
             const liveText = document.getElementById('live-text');
             if (manualActive) {
@@ -1204,13 +1253,18 @@
                     btn.textContent = '⏹ 结束训练';
                     btn.style.background = 'linear-gradient(135deg, #ff5c6c, #ff8c42)';
                 }
+                if (pauseBtn) {
+                    pauseBtn.style.display = '';
+                    pauseBtn.textContent = manualPaused ? '▶ 继续训练' : '⏸ 暂停训练';
+                }
                 if (pill) pill.style.display = '';
-                if (liveText) liveText.textContent = '实时分析中';
+                if (liveText) liveText.textContent = manualPaused ? '已暂停' : '实时分析中';
             } else {
                 if (btn) {
                     btn.textContent = '▶ 开始训练';
                     btn.style.background = '';
                 }
+                if (pauseBtn) pauseBtn.style.display = 'none';
                 if (pill) pill.style.display = 'none';
                 if (liveText) liveText.textContent = '等待开始训练';
             }
@@ -1220,7 +1274,7 @@
             const el = document.getElementById('manual-timer');
             if (!el) return;
             let sec = 0;
-            if (manualActive) sec = (Date.now() - manualElapsedStart) / 1000;
+            if (manualActive && !manualPaused) sec = (Date.now() - manualElapsedStart) / 1000;
             el.textContent = fmtDur(sec);
         }
 

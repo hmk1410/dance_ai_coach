@@ -20,8 +20,8 @@ CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
 
 DEFAULT_CONFIG = {
     'deepseek_api_key': '',
-    'deepseek_model': 'deepseek-chat',
-    'deepseek_base_url': 'https://api.deepseek.com',
+    'deepseek_model': 'glm-4-flash-250414',
+    'deepseek_base_url': 'https://open.bigmodel.cn/api/paas/v4',
     'coach_system_prompt': (
         '你是「舞镜·智芯」AI舞蹈教练，一位专业、耐心、友善的中文舞蹈老师。'
         '你精通古典舞、现代舞、街舞等舞种，熟悉中国古典舞手位（如：山膀、按掌、提腕、压腕）'
@@ -30,6 +30,17 @@ DEFAULT_CONFIG = {
         '请用简洁、清晰、鼓励的语气回答，必要时给出分步骤建议。回答控制在500字以内。'
     )
 }
+
+
+def _is_placeholder_key(key):
+    """判断是否为占位符/无效 Key，避免被当作真实配置发送请求"""
+    if not key:
+        return True
+    k = str(key).strip()
+    lower = k.lower()
+    if 'your_' in lower or 'here' in lower or 'xxx' in lower or 'sk-xxx' in lower or '替换' in lower:
+        return True
+    return False
 
 
 def load_config():
@@ -52,11 +63,11 @@ def resolve_llm_config(user_llm=None):
     解析当前有效的 LLM 配置。优先级：用户自己的 Key > config.json 全局。
 
     返回 (dict|None, source)：
-      - user_llm 传 {'api_key':..,'base_url':..,'model':..} 且有 key → (该配置, 'user')
-      - config.json / 环境变量有全局 key → (全局配置, 'global')
+      - user_llm 传 {'api_key':..,'base_url':..,'model':..} 且 key 有效 → (该配置, 'user')
+      - config.json / 环境变量有有效全局 key → (全局配置, 'global')
       - 都没有 → (None, 'none')，由调用方走内置引擎兜底
     """
-    if user_llm and user_llm.get('api_key'):
+    if user_llm and not _is_placeholder_key(user_llm.get('api_key')):
         cfg = {
             'api_key': user_llm['api_key'],
             'base_url': user_llm.get('base_url') or DEFAULT_CONFIG['deepseek_base_url'],
@@ -64,7 +75,7 @@ def resolve_llm_config(user_llm=None):
         }
         return cfg, 'user'
     g = load_config()
-    if g.get('deepseek_api_key'):
+    if not _is_placeholder_key(g.get('deepseek_api_key')):
         return {
             'api_key': g['deepseek_api_key'],
             'base_url': g['deepseek_base_url'],

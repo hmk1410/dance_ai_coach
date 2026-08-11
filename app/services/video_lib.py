@@ -9,6 +9,7 @@ import os
 from werkzeug.utils import secure_filename
 
 from standard_from_video import extract_standard_metrics
+from dtw_tracker import extract_standard_sequence
 
 from .. import config
 from .. import models
@@ -16,31 +17,57 @@ from .. import state
 
 
 def get_video_standard(video_id):
-    """获取视频的标准姿态模板（带缓存）"""
+    """获取视频的标准姿态模板（带缓存）
+
+    缓存结构：{filename: {'metrics': {...}或None, 'sequence': [...]或None}}
+    """
     v = models.find_video(video_id)
     if not v:
         return None, None
     path = os.path.join(config.VIDEO_DIR, v['filename'])
 
-    if v['filename'] in state.video_standard_cache:
-        return v, state.video_standard_cache[v['filename']]
+    cached = state.video_standard_cache.get(v['filename'])
+    if cached is not None:
+        return v, cached.get('metrics')
 
     with state.video_extract_lock:
-        if v['filename'] in state.video_standard_cache:
-            return v, state.video_standard_cache[v['filename']]
+        cached = state.video_standard_cache.get(v['filename'])
+        if cached is not None:
+            return v, cached.get('metrics')
         metrics = extract_standard_metrics(path)
-        if metrics:
-            state.video_standard_cache[v['filename']] = metrics
+        sequence = extract_standard_sequence(path)
+        state.video_standard_cache[v['filename']] = {
+            'metrics': metrics,
+            'sequence': sequence,
+        }
         return v, metrics
+
+
+def get_video_sequence(video_id):
+    """获取视频的 DTW 标准姿态序列（带缓存）"""
+    v, _ = get_video_standard(video_id)
+    if not v:
+        return None
+    cached = state.video_standard_cache.get(v['filename'])
+    return cached.get('sequence') if cached else None
 
 
 def select_video_for_training(video_id):
-    """选中视频作为训练标准，返回 (v, metrics) 或 (None, None)"""
+    """选中视频作为训练标准，返回 (v, metrics) 或 (None, None)
+
+    优先使用 DTW 时序对齐（动态动作）；无可用时退回静态角度标准。
+    """
     v, metrics = get_video_standard(video_id)
-    if not v or not metrics:
+    if not v:
         return v, metrics
+    sequence = get_video_sequence(video_id)
     with state.lock:
-        state.analyzer.set_external_template(v['title'], metrics)
+        if sequence:
+            state.analyzer.set_dtw(v['title'], sequence)
+        elif metrics:
+            state.analyzer.set_external_template(v['title'], metrics)
+        else:
+            return v, None
     return v, metrics
 
 

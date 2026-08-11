@@ -123,18 +123,23 @@ def use_video():
     v, metrics = video_lib.get_video_standard(video_id)
     if not v:
         return jsonify({'success': False, 'error': '未找到该视频'}), 404
-    if not metrics:
-        return jsonify({'success': False, 'error': '无法从该视频中识别出人体姿态'}), 422
+    sequence = video_lib.get_video_sequence(video_id)
     with state_lock():
         import app.state as st
-        st.analyzer.set_external_template(v['title'], metrics)
+        if sequence:
+            st.analyzer.set_dtw(v['title'], sequence)
+        elif metrics:
+            st.analyzer.set_external_template(v['title'], metrics)
+        else:
+            return jsonify({'success': False, 'error': '无法从该视频中识别出人体姿态'}), 422
     return jsonify({
         'success': True,
         'title': v['title'],
         'category': v['category'],
         'filename': v['filename'],
         'video_url': '/video/' + v['filename'],
-        'metrics_count': len(metrics)
+        'metrics_count': len(metrics) if metrics else 0,
+        'mode': '时序对齐' if sequence else '静态标准'
     })
 
 

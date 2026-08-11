@@ -34,6 +34,8 @@ stats_lock = threading.Lock()
 _training_stats = None
 _manual_active = False        # 手动训练会话是否开启
 _manual_start = None          # 手动训练开始时间
+_manual_paused = False        # 手动训练是否暂停
+_paused_at = None             # 暂停时刻
 _session_score_samples = []   # 手动训练期间累积的分数样本
 
 
