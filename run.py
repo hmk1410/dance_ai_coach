@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 run.py
-启动脚本（仿青就业 run.py）：初始化并启动 Flask 应用。
+启动脚本：初始化并启动 Flask 应用。
 """
 
 import threading

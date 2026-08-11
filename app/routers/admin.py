@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 admin.py
-后台管理路由（仿青就业 routers/admin.py）：/admin 页面 + /api/admin/*
+后台管理路由：/admin 页面 + /api/admin/*
 """
 
 from flask import Blueprint, render_template, request, jsonify

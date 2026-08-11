@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 auth.py
-认证路由（仿青就业 routers/auth.py）：/api/auth/*
+认证路由：/api/auth/*
 """
 
 from flask import Blueprint, request, jsonify, session

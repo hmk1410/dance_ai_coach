@@ -62,7 +62,7 @@ python run.py
 
 ```
 ├── run.py                     # 启动脚本
-├── app/                       # 应用包（仿青就业分层）
+├── app/                       # 应用包（分层架构）
 │   ├── __init__.py            # 应用工厂 create_app()，注册所有蓝图
 │   ├── config.py              # 配置读取（config.json + 环境变量）
 │   ├── state.py               # 全局运行时状态（摄像头/分析器/统计）

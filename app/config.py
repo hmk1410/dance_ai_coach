@@ -2,7 +2,7 @@
 """
 config.py
 应用配置：读取 config.json（全局大模型配置）+ 环境变量。
-仿青就业的 config.py：集中管理路径与配置项。
+集中管理路径与配置项。
 """
 
 import os

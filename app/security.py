@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 security.py
-认证与安全（仿青就业 security.py）：
+认证与安全：
 登录装饰器、密码哈希、LLM Key 加解密。
 """
 
@@ -93,7 +93,7 @@ def admin_required(f):
 
 
 def llm_config_response(uid):
-    """仿青就业：返回前端展示的 LLM 配置状态（source: user/global/none）"""
+    """返回前端展示的 LLM 配置状态（source: user/global/none）"""
     cfg = models.get_llm_config(uid)
     has_user_key = bool(cfg['api_key'])
     if has_user_key:

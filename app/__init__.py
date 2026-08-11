@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-app 包：Flask 应用工厂（仿青就业 backend/app 结构）
+app 包：Flask 应用工厂（分层架构）
 """
 
 import os

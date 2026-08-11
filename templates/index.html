@@ -575,7 +575,7 @@
         </div>
     </div>
 
-    <!-- 大模型配置弹窗（仿青就业） -->
+    <!-- 大模型配置弹窗 -->
     <div class="modal" id="llm-modal">
         <div class="modal-inner" style="max-width:460px;" onclick="event.stopPropagation()">
             <button class="modal-close" onclick="closeLlmConfig()">&times;</button>
@@ -712,7 +712,7 @@
                 .catch(() => location.reload());
         }
 
-        // ============ 大模型配置（仿青就业） ============
+        // ============ 大模型配置 ============
         function openLlmConfig() {
             const modal = document.getElementById('llm-modal');
             modal.classList.add('show');

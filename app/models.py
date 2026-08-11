@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 models.py
-数据访问层（仿青就业 database.py + models.py）：
+数据访问层：
 视频库扫描、训练统计、SQLite 用户相关查询。
 """
 

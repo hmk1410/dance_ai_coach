@@ -3,7 +3,7 @@
 dance_coach.py
 AI舞蹈教练：调用 OpenAI 兼容接口（DeepSeek 等）实现智能问答，未配置时使用内置免费答疑引擎兜底。
 
-配置方式（仿青就业：优先级 用户 Key > config.json 全局 > 内置引擎）：
+配置方式（优先级：用户 Key > config.json 全局 > 内置引擎）：
   1) 网页端「账号与系统 → 大模型配置」填写自己的 API Key（加密存储，优先生效）
   2) 或编辑项目根目录的 config.json，填入 "deepseek_api_key"（全局生效）
   3) 都不配置时，自动使用内置免费答疑引擎回答舞蹈问题
