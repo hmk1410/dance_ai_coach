@@ -53,27 +53,44 @@ pip install -r requirements.txt
 ### 5. 启动应用
 
 ```bash
-python app.py
+python run.py
 ```
 
 浏览器访问 `http://127.0.0.1:5000`，首次注册的账号自动成为管理员（默认数据中预置管理员 `admin / admin123`，请及时修改密码）。
 
-## 目录结构
+## 目录结构（分层架构）
 
 ```
-├── app.py                    # 主入口（Flask 应用，含 API 路由）
-├── user_auth.py              # 用户认证 + 管理员管理 + LLM 配置加密存储
-├── pose_analyzer.py          # 姿态检测分析
-├── scoring_engine.py         # 舞蹈评分引擎
-├── dance_standards.py        # 标准动作管理
-├── dance_features.py         # 舞蹈特征提取
-├── feedback_renderer.py      # 反馈渲染
-├── standard_from_video.py    # 从视频提取标准动作
-├── dance_coach.py            # AI 教练对话模块 + 内置免费答疑引擎
-├── templates/                # 前端页面（index / admin）
-├── vidoe/                    # 舞蹈视频库
-├── users.db                  # 用户数据库（运行时自动生成）
-└── config.json               # 全局配置文件
+├── run.py                     # 启动脚本
+├── app/                       # 应用包（仿青就业分层）
+│   ├── __init__.py            # 应用工厂 create_app()，注册所有蓝图
+│   ├── config.py              # 配置读取（config.json + 环境变量）
+│   ├── state.py               # 全局运行时状态（摄像头/分析器/统计）
+│   ├── models.py              # 数据访问层（视频库/训练统计/SQLite 用户）
+│   ├── security.py            # 认证装饰器 + 密码哈希 + LLM Key 加解密
+│   ├── services/              # 业务逻辑层
+│   │   ├── pose_runner.py     # 姿态处理循环 + MJPEG 视频流
+│   │   ├── video_lib.py       # 视频库/标准提取/上传
+│   │   ├── coach.py           # AI 教练对话封装
+│   │   └── stats.py           # 训练统计逻辑
+│   └── routers/               # API 路由层（Flask Blueprint）
+│       ├── auth.py            # /api/auth/* 认证
+│       ├── admin.py           # 首页/管理页 + /api/admin/*
+│       ├── live.py            # /video_feed /api/analysis /api/start|stop
+│       ├── videos.py          # /api/videos /api/upload /api/use_video
+│       ├── coach.py           # /api/chat /api/coach/* /api/llm/*
+│       └── stats.py           # /api/stats /api/training/* /api/score/*
+├── pose_analyzer.py           # 姿态检测分析（MediaPipe）
+├── scoring_engine.py          # 舞蹈评分引擎
+├── dance_standards.py         # 标准动作管理
+├── dance_features.py          # 舞蹈特征提取
+├── feedback_renderer.py       # 反馈渲染
+├── standard_from_video.py     # 从视频提取标准动作
+├── dance_coach.py             # AI 教练对话模块 + 内置免费答疑引擎
+├── templates/                 # 前端页面（index / admin）
+├── vidoe/                     # 舞蹈视频库
+├── users.db                   # 用户数据库（运行时自动生成）
+└── config.json                # 全局配置文件
 ```
 
 ## 技术栈
